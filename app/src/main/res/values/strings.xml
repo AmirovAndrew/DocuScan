@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">DocuScan</string>
+
+    <string name="permission_title">Camera access needed</string>
+    <string name="permission_text">DocuScan uses the camera to photograph documents. You can also import a photo from the gallery.</string>
+    <string name="permission_grant">Allow</string>
+    <string name="permission_settings">Open settings</string>
+
+    <string name="camera_hint">Point the camera at a document</string>
+    <string name="camera_hint_found">Document found — take the photo</string>
+    <string name="capture">Take photo</string>
+    <string name="import_from_gallery">Import from gallery</string>
+    <string name="flash_off">Flash off</string>
+    <string name="flash_auto">Flash auto</string>
+    <string name="flash_on">Flash on</string>
+
+    <string name="back">Back</string>
+    <string name="crop_title">Document borders</string>
+    <string name="crop_auto">Auto</string>
+    <string name="crop_full">Full image</string>
+    <string name="next">Next</string>
+
+    <string name="edit_title">Adjust</string>
+    <string name="rotate">Rotate</string>
+    <string name="mode_color">Color</string>
+    <string name="mode_grayscale">Grayscale</string>
+    <string name="mode_black_white">B&amp;W</string>
+    <string name="white_balance">White balance</string>
+    <string name="white_balance_auto_hint">Automatic; sliders fine-tune it</string>
+    <string name="white_balance_manual_hint">Manual</string>
+    <string name="auto">Auto</string>
+    <string name="temperature">Temperature</string>
+    <string name="tint">Tint</string>
+    <string name="brightness">Brightness</string>
+    <string name="contrast">Contrast</string>
+    <string name="threshold">Threshold</string>
+    <string name="reset">Reset</string>
+    <string name="save">Save</string>
+
+    <string name="saved">Saved to the gallery (Pictures/DocuScan)</string>
+    <string name="document_not_found">Document not detected — drag the corners into place</string>
+    <string name="error_capture">Couldn\'t take the photo</string>
+    <string name="error_open">Couldn\'t open the image</string>
+    <string name="error_save">Couldn\'t save the image</string>
+</resources>
