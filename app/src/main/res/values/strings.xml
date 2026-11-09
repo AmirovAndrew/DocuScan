@@ -48,6 +48,9 @@
     <string name="add_page">Add page</string>
     <string name="save_pdf">Save PDF</string>
     <string name="save_images">Save photos</string>
+    <string name="share">Share</string>
+    <string name="share_as_pdf">As PDF</string>
+    <string name="share_as_images">As photos</string>
     <string name="move_earlier">Move earlier</string>
     <string name="move_later">Move later</string>
     <string name="delete_page">Delete page</string>
@@ -64,4 +67,5 @@
     <string name="error_capture">Couldn\'t take the photo</string>
     <string name="error_open">Couldn\'t open the image</string>
     <string name="error_save">Couldn\'t save the image</string>
+    <string name="error_share">Couldn\'t prepare the files to share</string>
 </resources>

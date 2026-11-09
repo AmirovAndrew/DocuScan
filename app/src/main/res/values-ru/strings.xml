@@ -48,6 +48,9 @@
     <string name="add_page">Добавить страницу</string>
     <string name="save_pdf">Сохранить PDF</string>
     <string name="save_images">Сохранить фото</string>
+    <string name="share">Поделиться</string>
+    <string name="share_as_pdf">PDF-файлом</string>
+    <string name="share_as_images">Фотографиями</string>
     <string name="move_earlier">Переместить раньше</string>
     <string name="move_later">Переместить позже</string>
     <string name="delete_page">Удалить страницу</string>
@@ -64,4 +67,5 @@
     <string name="error_capture">Не удалось сделать снимок</string>
     <string name="error_open">Не удалось открыть изображение</string>
     <string name="error_save">Не удалось сохранить изображение</string>
+    <string name="error_share">Не удалось подготовить файлы для отправки</string>
 </resources>

@@ -1,5 +1,8 @@
 package com.amirovandrew.docuscan.ui
 
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -33,12 +36,17 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             val (message, duration) = when (event) {
+                is ScannerEvent.Share -> {
+                    share(context, event)
+                    return@collect
+                }
                 ScannerEvent.SavedImages -> R.string.saved to Toast.LENGTH_LONG
                 ScannerEvent.SavedPdf -> R.string.saved_pdf to Toast.LENGTH_LONG
                 ScannerEvent.DocumentNotFound -> R.string.document_not_found to Toast.LENGTH_LONG
                 ScannerEvent.CaptureFailed -> R.string.error_capture to Toast.LENGTH_SHORT
                 ScannerEvent.OpenFailed -> R.string.error_open to Toast.LENGTH_SHORT
                 ScannerEvent.SaveFailed -> R.string.error_save to Toast.LENGTH_SHORT
+                ScannerEvent.ShareFailed -> R.string.error_share to Toast.LENGTH_SHORT
             }
             Toast.makeText(context, message, duration).show()
         }
@@ -99,6 +107,8 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
                     onDiscard = { confirmDiscard = true },
                     onSaveImages = viewModel::saveAsImages,
                     onSavePdf = viewModel::saveAsPdf,
+                    onShareImages = viewModel::shareAsImages,
+                    onSharePdf = viewModel::shareAsPdf,
                 )
             }
         }
@@ -126,4 +136,22 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
             onDismiss = { confirmDiscard = false },
         )
     }
+}
+
+/** Opens the system share sheet for the prepared files. */
+private fun share(context: Context, event: ScannerEvent.Share) {
+    val uris = event.uris
+    if (uris.isEmpty()) return
+    val intent = if (uris.size == 1) {
+        Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.first())
+    } else {
+        Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+    }
+    intent.type = event.mimeType
+    // The ClipData carries the read permission for every file to the receiving app.
+    intent.clipData = ClipData.newRawUri(null, uris.first()).apply {
+        uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+    }
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.share)))
 }

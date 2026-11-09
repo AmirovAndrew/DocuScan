@@ -5,12 +5,14 @@ import android.net.Uri
 import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.amirovandrew.docuscan.core.Adjustments
 import com.amirovandrew.docuscan.core.ChannelGains
 import com.amirovandrew.docuscan.core.DocumentDetector
 import com.amirovandrew.docuscan.core.DocumentProcessor
+import com.amirovandrew.docuscan.core.EncodedImage
 import com.amirovandrew.docuscan.core.PdfWriter
 import com.amirovandrew.docuscan.core.Quad
 import com.amirovandrew.docuscan.core.ScanEncoder
@@ -29,6 +31,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.core.Mat
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,6 +75,10 @@ sealed interface ScannerEvent {
     data object CaptureFailed : ScannerEvent
     data object OpenFailed : ScannerEvent
     data object SaveFailed : ScannerEvent
+
+    /** Offer [uris] (all of [mimeType]) to other apps. */
+    data class Share(val uris: List<Uri>, val mimeType: String) : ScannerEvent
+    data object ShareFailed : ScannerEvent
 }
 
 class ScannerViewModel(application: Application) : AndroidViewModel(application) {
@@ -85,6 +93,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         deleteRecursively()
         mkdirs()
     }
+
+    /** Files handed to other apps; shared through the FileProvider (see res/xml/file_paths.xml). */
+    private val shareDirectory = File(application.cacheDir, "share").apply { deleteRecursively() }
 
     private val _state = MutableStateFlow(ScannerUiState(adjustments = preferences.load()))
     val state: StateFlow<ScannerUiState> = _state.asStateFlow()
@@ -340,22 +351,14 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private fun save(asPdf: Boolean) = runBusy {
         val pages = _state.value.pages
         if (pages.isEmpty()) return@runBusy
-        val name = "DocuScan_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val name = documentName()
         val context = getApplication<Application>()
         val result = withContext(processing) {
             runCatching {
                 if (asPdf) {
-                    ImageIo.save(context, "$name.pdf", "application/pdf", ImageIo.Folder.DOWNLOADS) { stream ->
-                        PdfWriter(stream).use { pdf ->
-                            for (p in pages) {
-                                pdf.addPage(renderFullSize(p) { ScanEncoder.pdfImage(it, p.adjustments.mode) })
-                            }
-                        }
-                    }
+                    ImageIo.save(context, "$name.pdf", PDF_MIME_TYPE, ImageIo.Folder.DOWNLOADS) { writePdf(pages, it) }
                 } else {
-                    pages.forEachIndexed { index, p ->
-                        val encoded = renderFullSize(p) { ScanEncoder.encodeImage(it, p.adjustments.mode) }
-                        val fileName = (if (pages.size == 1) name else "${name}_${index + 1}") + "." + encoded.format.extension
+                    exportImages(pages, name) { fileName, encoded ->
                         ImageIo.save(context, fileName, encoded.format.mimeType, ImageIo.Folder.PICTURES) {
                             it.write(encoded.bytes)
                         }
@@ -373,6 +376,67 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             _events.send(ScannerEvent.SaveFailed)
         }
     }
+
+    fun shareAsPdf() = share(asPdf = true)
+
+    fun shareAsImages() = share(asPdf = false)
+
+    /**
+     * Renders the document into temporary files and asks the UI to offer them to other apps.
+     * The document stays open, so it can still be saved or changed afterwards.
+     */
+    private fun share(asPdf: Boolean) = runBusy {
+        val pages = _state.value.pages
+        if (pages.isEmpty()) return@runBusy
+        val name = documentName()
+        val context = getApplication<Application>()
+        val result = withContext(processing) {
+            runCatching {
+                // Files of an earlier share have been picked up by now.
+                shareDirectory.deleteRecursively()
+                shareDirectory.mkdirs()
+                val files = ArrayList<File>()
+                val mimeTypes = LinkedHashSet<String>()
+                if (asPdf) {
+                    val file = File(shareDirectory, "$name.pdf")
+                    FileOutputStream(file).use { writePdf(pages, it) }
+                    files += file
+                    mimeTypes += PDF_MIME_TYPE
+                } else {
+                    exportImages(pages, name) { fileName, encoded ->
+                        files += File(shareDirectory, fileName).apply { writeBytes(encoded.bytes) }
+                        mimeTypes += encoded.format.mimeType
+                    }
+                }
+                val uris = files.map { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it) }
+                ScannerEvent.Share(uris, mimeTypes.singleOrNull() ?: "image/*")
+            }
+        }
+        result.onSuccess { _events.send(it) }.onFailure { error ->
+            Log.e(TAG, "Unable to prepare files for sharing", error)
+            _events.send(ScannerEvent.ShareFailed)
+        }
+    }
+
+    /** Writes the whole document as a PDF. Runs on [processing]. */
+    private fun writePdf(pages: List<ScanPage>, stream: OutputStream) {
+        PdfWriter(stream).use { pdf ->
+            for (p in pages) {
+                pdf.addPage(renderFullSize(p) { ScanEncoder.pdfImage(it, p.adjustments.mode) })
+            }
+        }
+    }
+
+    /** Encodes every page as an image and hands it over with its file name. Runs on [processing]. */
+    private fun exportImages(pages: List<ScanPage>, name: String, consume: (String, EncodedImage) -> Unit) {
+        pages.forEachIndexed { index, p ->
+            val encoded = renderFullSize(p) { ScanEncoder.encodeImage(it, p.adjustments.mode) }
+            val fileName = (if (pages.size == 1) name else "${name}_${index + 1}") + "." + encoded.format.extension
+            consume(fileName, encoded)
+        }
+    }
+
+    private fun documentName() = "DocuScan_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     /**
      * Renders [scan] at full resolution and hands the result to [use]. Only one page is held in
@@ -449,6 +513,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     private companion object {
         const val TAG = "DocuScan"
+        const val PDF_MIME_TYPE = "application/pdf"
 
         /** Larger bitmaps may exceed the GPU texture limit on older phones. */
         const val DISPLAY_MAX_SIDE = 2048

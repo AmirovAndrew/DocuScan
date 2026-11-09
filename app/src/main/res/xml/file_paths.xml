@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the temporary files prepared for sharing are exposed to other apps. -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>
