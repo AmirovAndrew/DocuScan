@@ -19,7 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,7 +59,7 @@ fun EditScreen(
     adjustments: Adjustments,
     onAdjust: ((Adjustments) -> Adjustments) -> Unit,
     onBack: () -> Unit,
-    onSave: () -> Unit,
+    onDone: () -> Unit,
 ) {
     Scaffold(
         containerColor = Color.Black,
@@ -99,7 +99,7 @@ fun EditScreen(
                     CircularProgressIndicator()
                 }
             }
-            AdjustmentPanel(adjustments, onAdjust, onSave)
+            AdjustmentPanel(adjustments, onAdjust, onDone)
         }
     }
 }
@@ -108,8 +108,9 @@ fun EditScreen(
 private fun AdjustmentPanel(
     adjustments: Adjustments,
     onAdjust: ((Adjustments) -> Adjustments) -> Unit,
-    onSave: () -> Unit,
+    onDone: () -> Unit,
 ) {
+    val blackWhite = adjustments.mode == ColorMode.BLACK_WHITE
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -125,28 +126,19 @@ private fun AdjustmentPanel(
             Column(
                 Modifier
                     .padding(top = 8.dp)
-                    .heightIn(max = 240.dp)
+                    .heightIn(max = 260.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 if (adjustments.mode == ColorMode.COLOR) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.white_balance), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(
-                                    if (adjustments.autoWhiteBalance) R.string.white_balance_auto_hint else R.string.white_balance_manual_hint,
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Text(stringResource(R.string.auto), style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(8.dp))
-                        Switch(
-                            checked = adjustments.autoWhiteBalance,
-                            onCheckedChange = { checked -> onAdjust { it.copy(autoWhiteBalance = checked) } },
-                        )
-                    }
+                    SwitchRow(
+                        title = stringResource(R.string.white_balance),
+                        hint = stringResource(
+                            if (adjustments.autoWhiteBalance) R.string.white_balance_auto_hint else R.string.white_balance_manual_hint,
+                        ),
+                        label = stringResource(R.string.auto),
+                        checked = adjustments.autoWhiteBalance,
+                        onCheckedChange = { checked -> onAdjust { it.copy(autoWhiteBalance = checked) } },
+                    )
                     AdjustmentSlider(stringResource(R.string.temperature), adjustments.temperature) { v ->
                         onAdjust { it.copy(temperature = v) }
                     }
@@ -154,15 +146,28 @@ private fun AdjustmentPanel(
                         onAdjust { it.copy(tint = v) }
                     }
                 }
+                if (!blackWhite) {
+                    SwitchRow(
+                        title = stringResource(R.string.even_lighting),
+                        hint = stringResource(R.string.even_lighting_hint),
+                        label = null,
+                        checked = adjustments.evenLighting,
+                        onCheckedChange = { checked -> onAdjust { it.copy(evenLighting = checked) } },
+                    )
+                }
                 AdjustmentSlider(stringResource(R.string.brightness), adjustments.brightness) { v ->
                     onAdjust { it.copy(brightness = v) }
                 }
                 AdjustmentSlider(stringResource(R.string.contrast), adjustments.contrast) { v ->
                     onAdjust { it.copy(contrast = v) }
                 }
-                if (adjustments.mode == ColorMode.BLACK_WHITE) {
+                if (blackWhite) {
                     AdjustmentSlider(stringResource(R.string.threshold), adjustments.threshold) { v ->
                         onAdjust { it.copy(threshold = v) }
+                    }
+                } else {
+                    AdjustmentSlider(stringResource(R.string.sharpness), adjustments.sharpness, 0f..1f) { v ->
+                        onAdjust { it.copy(sharpness = v) }
                     }
                 }
             }
@@ -175,10 +180,10 @@ private fun AdjustmentPanel(
                     Text(stringResource(R.string.reset))
                 }
                 Spacer(Modifier.weight(1f))
-                Button(onClick = onSave) {
-                    Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                Button(onClick = onDone) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.save))
+                    Text(stringResource(R.string.done))
                 }
             }
         }
@@ -214,9 +219,36 @@ private fun ModeSelector(selected: ColorMode, onSelect: (ColorMode) -> Unit) {
     }
 }
 
-/** A compact slider for a -1..1 value, shown as -100..100. */
+/** A title with a hint and a switch. */
 @Composable
-private fun AdjustmentSlider(label: String, value: Float, onValueChange: (Float) -> Unit) {
+private fun SwitchRow(
+    title: String,
+    hint: String,
+    label: String?,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (label != null) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(8.dp))
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** A compact slider for a value in [range], shown in percent. */
+@Composable
+private fun AdjustmentSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float> = -1f..1f,
+    onValueChange: (Float) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             label,
@@ -228,7 +260,7 @@ private fun AdjustmentSlider(label: String, value: Float, onValueChange: (Float)
         Slider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = -1f..1f,
+            valueRange = range,
             modifier = Modifier.weight(1f),
         )
         Text(

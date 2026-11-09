@@ -14,6 +14,7 @@
     <string name="flash_off">Flash off</string>
     <string name="flash_auto">Flash auto</string>
     <string name="flash_on">Flash on</string>
+    <string name="document_pages">Document pages</string>
 
     <string name="back">Back</string>
     <string name="crop_title">Document borders</string>
@@ -35,10 +36,30 @@
     <string name="brightness">Brightness</string>
     <string name="contrast">Contrast</string>
     <string name="threshold">Threshold</string>
+    <string name="even_lighting">Even out lighting</string>
+    <string name="even_lighting_hint">Removes shadows and dim corners</string>
+    <string name="sharpness">Sharpness</string>
+    <string name="done">Done</string>
+
+    <plurals name="pages_count">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <string name="add_page">Add page</string>
+    <string name="save_pdf">Save PDF</string>
+    <string name="save_images">Save photos</string>
+    <string name="move_earlier">Move earlier</string>
+    <string name="move_later">Move later</string>
+    <string name="delete_page">Delete page</string>
+    <string name="discard_document">Discard document</string>
+    <string name="discard_title">Discard all pages?</string>
+    <string name="discard_text">The scanned pages haven\'t been saved yet.</string>
+    <string name="discard">Discard</string>
+    <string name="cancel">Cancel</string>
     <string name="reset">Reset</string>
-    <string name="save">Save</string>
 
     <string name="saved">Saved to the gallery (Pictures/DocuScan)</string>
+    <string name="saved_pdf">PDF saved to Download/DocuScan</string>
     <string name="document_not_found">Document not detected — drag the corners into place</string>
     <string name="error_capture">Couldn\'t take the photo</string>
     <string name="error_open">Couldn\'t open the image</string>

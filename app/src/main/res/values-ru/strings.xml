@@ -12,6 +12,7 @@
     <string name="flash_off">Вспышка выключена</string>
     <string name="flash_auto">Автовспышка</string>
     <string name="flash_on">Вспышка включена</string>
+    <string name="document_pages">Страницы документа</string>
 
     <string name="back">Назад</string>
     <string name="crop_title">Границы документа</string>
@@ -33,10 +34,32 @@
     <string name="brightness">Яркость</string>
     <string name="contrast">Контраст</string>
     <string name="threshold">Порог</string>
+    <string name="even_lighting">Выровнять освещение</string>
+    <string name="even_lighting_hint">Убирает тени и затемнённые углы</string>
+    <string name="sharpness">Резкость</string>
+    <string name="done">Готово</string>
+
+    <plurals name="pages_count">
+        <item quantity="one">%d страница</item>
+        <item quantity="few">%d страницы</item>
+        <item quantity="many">%d страниц</item>
+        <item quantity="other">%d страницы</item>
+    </plurals>
+    <string name="add_page">Добавить страницу</string>
+    <string name="save_pdf">Сохранить PDF</string>
+    <string name="save_images">Сохранить фото</string>
+    <string name="move_earlier">Переместить раньше</string>
+    <string name="move_later">Переместить позже</string>
+    <string name="delete_page">Удалить страницу</string>
+    <string name="discard_document">Удалить документ</string>
+    <string name="discard_title">Удалить все страницы?</string>
+    <string name="discard_text">Отсканированные страницы ещё не сохранены.</string>
+    <string name="discard">Удалить</string>
+    <string name="cancel">Отмена</string>
     <string name="reset">Сбросить</string>
-    <string name="save">Сохранить</string>
 
     <string name="saved">Сохранено в галерею (Pictures/DocuScan)</string>
+    <string name="saved_pdf">PDF сохранён в папку Download/DocuScan</string>
     <string name="document_not_found">Документ не найден — перетащите углы вручную</string>
     <string name="error_capture">Не удалось сделать снимок</string>
     <string name="error_open">Не удалось открыть изображение</string>

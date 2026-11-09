@@ -15,12 +15,16 @@ data class Adjustments(
     val mode: ColorMode = ColorMode.COLOR,
     /** Neutralise the paper colour automatically. Manual temperature/tint are applied on top. */
     val autoWhiteBalance: Boolean = true,
+    /** Brighten shadowed and dimly lit parts of the page (colour and grayscale modes). */
+    val evenLighting: Boolean = true,
     /** Positive = warmer (more red, less blue). */
     val temperature: Float = 0f,
     /** Positive = more magenta, negative = more green. */
     val tint: Float = 0f,
     val brightness: Float = 0f,
     val contrast: Float = 0f,
+    /** 0..1, unsharp masking for crisper text (colour and grayscale modes). */
+    val sharpness: Float = DEFAULT_SHARPNESS,
     /** Black & white only: positive keeps more dark detail (bolder text), negative gives a cleaner page. */
     val threshold: Float = 0f,
     /** Clockwise rotation of the result, one of 0, 90, 180, 270. */
@@ -28,9 +32,13 @@ data class Adjustments(
 ) {
     fun rotatedClockwise(): Adjustments = copy(rotation = (rotation + 90) % 360)
 
-    /** Resets the sliders but keeps the chosen mode, auto white balance setting and rotation. */
+    /** Resets the sliders but keeps the chosen mode, the switches and the rotation. */
     fun resetSliders(): Adjustments =
-        Adjustments(mode = mode, autoWhiteBalance = autoWhiteBalance, rotation = rotation)
+        Adjustments(mode = mode, autoWhiteBalance = autoWhiteBalance, evenLighting = evenLighting, rotation = rotation)
+
+    companion object {
+        const val DEFAULT_SHARPNESS = 0.3f
+    }
 }
 
 /** Per-channel multipliers. */

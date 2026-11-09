@@ -109,5 +109,7 @@ class AdjustmentsTest {
     fun `reset keeps mode and rotation`() {
         val a = Adjustments(mode = ColorMode.BLACK_WHITE, brightness = 0.3f, temperature = -0.2f, rotation = 180)
         assertEquals(Adjustments(mode = ColorMode.BLACK_WHITE, rotation = 180), a.resetSliders())
+        val b = Adjustments(evenLighting = false, autoWhiteBalance = false, sharpness = 0.9f, contrast = 0.4f)
+        assertEquals(Adjustments(evenLighting = false, autoWhiteBalance = false), b.resetSliders())
     }
 }

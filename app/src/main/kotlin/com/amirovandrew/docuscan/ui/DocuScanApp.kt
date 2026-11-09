@@ -9,6 +9,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,11 +28,13 @@ import com.amirovandrew.docuscan.Screen
 fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             val (message, duration) = when (event) {
-                is ScannerEvent.Saved -> R.string.saved to Toast.LENGTH_LONG
+                ScannerEvent.SavedImages -> R.string.saved to Toast.LENGTH_LONG
+                ScannerEvent.SavedPdf -> R.string.saved_pdf to Toast.LENGTH_LONG
                 ScannerEvent.DocumentNotFound -> R.string.document_not_found to Toast.LENGTH_LONG
                 ScannerEvent.CaptureFailed -> R.string.error_capture to Toast.LENGTH_SHORT
                 ScannerEvent.OpenFailed -> R.string.error_open to Toast.LENGTH_SHORT
@@ -41,14 +46,22 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         when (state.screen) {
-            Screen.CAMERA -> CameraScreen(
-                onPhotoCaptured = viewModel::onPhotoCaptured,
-                onImagePicked = viewModel::onImagePicked,
-                onCaptureFailed = viewModel::onCaptureFailed,
-            )
+            Screen.CAMERA -> {
+                // Leaving the app would lose the unsaved pages: ask first.
+                BackHandler(enabled = state.pages.isNotEmpty()) { confirmDiscard = true }
+                CameraScreen(
+                    pageCount = state.pages.size,
+                    lastPage = state.pages.lastOrNull()?.thumbnail,
+                    newPhotoFile = viewModel::newPhotoFile,
+                    onPhotoCaptured = viewModel::onPhotoCaptured,
+                    onImagePicked = viewModel::onImagePicked,
+                    onCaptureFailed = viewModel::onCaptureFailed,
+                    onOpenPages = viewModel::openPages,
+                )
+            }
 
             Screen.CROP -> {
-                BackHandler { if (!state.busy) viewModel.backToCamera() }
+                BackHandler { viewModel.backFromCrop() }
                 state.photo?.let { photo ->
                     CropScreen(
                         photo = photo,
@@ -57,20 +70,35 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
                         onQuadChange = viewModel::onCropChanged,
                         onUseDetected = viewModel::useDetectedCrop,
                         onUseFullImage = viewModel::useFullImage,
-                        onBack = viewModel::backToCamera,
+                        onBack = viewModel::backFromCrop,
                         onConfirm = viewModel::confirmCrop,
                     )
                 }
             }
 
             Screen.EDIT -> {
-                BackHandler { if (!state.busy) viewModel.backToCrop() }
+                BackHandler { viewModel.backFromEdit() }
                 EditScreen(
                     preview = state.preview,
                     adjustments = state.adjustments,
                     onAdjust = viewModel::updateAdjustments,
-                    onBack = viewModel::backToCrop,
-                    onSave = viewModel::save,
+                    onBack = viewModel::backFromEdit,
+                    onDone = viewModel::finishPage,
+                )
+            }
+
+            Screen.PAGES -> {
+                BackHandler { if (!state.busy) viewModel.addPage() }
+                PagesScreen(
+                    pages = state.pages,
+                    onBack = viewModel::addPage,
+                    onAddPage = viewModel::addPage,
+                    onOpenPage = viewModel::editPage,
+                    onMovePage = viewModel::movePage,
+                    onDeletePage = viewModel::deletePage,
+                    onDiscard = { confirmDiscard = true },
+                    onSaveImages = viewModel::saveAsImages,
+                    onSavePdf = viewModel::saveAsPdf,
                 )
             }
         }
@@ -87,5 +115,15 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
                 CircularProgressIndicator()
             }
         }
+    }
+
+    if (confirmDiscard) {
+        DiscardDocumentDialog(
+            onConfirm = {
+                confirmDiscard = false
+                viewModel.discardDocument()
+            },
+            onDismiss = { confirmDiscard = false },
+        )
     }
 }

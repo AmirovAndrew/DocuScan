@@ -21,9 +21,7 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.io.OutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -33,13 +31,8 @@ object ImageIo {
     const val MAX_PHOTO_SIDE = 4000
 
     private const val ALBUM = "DocuScan"
-    private const val JPEG_QUALITY = 95
 
     fun decodeFile(file: File): Bitmap = decode { FileInputStream(file) }
-
-    fun decodeUri(context: Context, uri: Uri): Bitmap = decode {
-        context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
-    }
 
     /** Decodes an image, scaled down to [MAX_PHOTO_SIDE] and rotated upright according to EXIF. */
     private fun decode(open: () -> InputStream): Bitmap {
@@ -116,25 +109,42 @@ object ImageIo {
         return bitmap
     }
 
-    /** Saves [bitmap] as a JPEG to Pictures/DocuScan, where gallery apps pick it up. */
-    fun saveToGallery(context: Context, bitmap: Bitmap): Uri {
-        val name = "DocuScan_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
-        val resolver = context.contentResolver
+    /** Copies the image behind [uri] (e.g. from the photo picker) into [file]. */
+    fun copy(context: Context, uri: Uri, file: File) {
+        val input = context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
+        input.use { source -> FileOutputStream(file).use { source.copyTo(it) } }
+    }
+
+    enum class Folder { PICTURES, DOWNLOADS }
+
+    /**
+     * Creates [fileName] in the DocuScan folder of Pictures or Download, where the gallery and file
+     * managers see it, and lets [write] fill it. A half-written file is removed on failure.
+     */
+    fun save(context: Context, fileName: String, mimeType: String, folder: Folder, write: (OutputStream) -> Unit): Uri {
+        val directory = when (folder) {
+            Folder.PICTURES -> Environment.DIRECTORY_PICTURES
+            Folder.DOWNLOADS -> Environment.DIRECTORY_DOWNLOADS
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$ALBUM")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
+            val resolver = context.contentResolver
+            val collection = when (folder) {
+                Folder.PICTURES -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                Folder.DOWNLOADS -> MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             }
-            val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val uri = resolver.insert(collection, values) ?: throw IOException("Unable to create a gallery entry")
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "$directory/$ALBUM")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(collection, values) ?: throw IOException("Unable to create $fileName")
             try {
                 val stream = resolver.openOutputStream(uri) ?: throw IOException("Unable to open $uri")
-                stream.use { if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it)) throw IOException("Compression failed") }
+                stream.use(write)
                 values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
             } catch (e: Exception) {
                 resolver.delete(uri, null, null)
@@ -144,13 +154,16 @@ object ImageIo {
         }
 
         @Suppress("DEPRECATION")
-        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), ALBUM)
-        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create $directory")
-        val file = File(directory, name)
-        FileOutputStream(file).use {
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it)) throw IOException("Compression failed")
+        val target = File(Environment.getExternalStoragePublicDirectory(directory), ALBUM)
+        if (!target.isDirectory && !target.mkdirs()) throw IOException("Unable to create $target")
+        val file = File(target, fileName)
+        try {
+            FileOutputStream(file).use(write)
+        } catch (e: Exception) {
+            file.delete()
+            throw e
         }
-        MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("image/jpeg"), null)
+        MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mimeType), null)
         return Uri.fromFile(file)
     }
 }

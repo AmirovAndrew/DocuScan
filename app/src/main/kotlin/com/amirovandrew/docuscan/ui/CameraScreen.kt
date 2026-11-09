@@ -21,6 +21,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.FlashAuto
@@ -65,9 +67,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -85,9 +89,13 @@ import java.util.concurrent.Executors
 
 @Composable
 fun CameraScreen(
+    pageCount: Int,
+    lastPage: ImageBitmap?,
+    newPhotoFile: () -> File,
     onPhotoCaptured: (File) -> Unit,
     onImagePicked: (Uri) -> Unit,
     onCaptureFailed: () -> Unit,
+    onOpenPages: () -> Unit,
 ) {
     val context = LocalContext.current
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -107,9 +115,11 @@ fun CameraScreen(
     }
 
     if (hasCamera) {
-        CameraContent(onPhotoCaptured, onCaptureFailed, openGallery)
+        CameraContent(pageCount, lastPage, newPhotoFile, onPhotoCaptured, onCaptureFailed, openGallery, onOpenPages)
     } else {
         PermissionRequest(
+            pageCount = pageCount,
+            onOpenPages = onOpenPages,
             onRequest = { requestPermissions.launch(requiredPermissions()) },
             onOpenSettings = {
                 context.startActivity(
@@ -131,9 +141,13 @@ private enum class FlashMode(val captureMode: Int) {
 
 @Composable
 private fun CameraContent(
+    pageCount: Int,
+    lastPage: ImageBitmap?,
+    newPhotoFile: () -> File,
     onPhotoCaptured: (File) -> Unit,
     onCaptureFailed: () -> Unit,
     onOpenGallery: () -> Unit,
+    onOpenPages: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -176,7 +190,7 @@ private fun CameraContent(
             shutterFlash.snapTo(0.7f)
             shutterFlash.animateTo(0f, tween(300))
         }
-        val file = File(context.cacheDir, "capture_${System.currentTimeMillis()}.jpg")
+        val file = newPhotoFile()
         controller.takePicture(
             ImageCapture.OutputFileOptions.Builder(file).build(),
             ContextCompat.getMainExecutor(context),
@@ -202,6 +216,16 @@ private fun CameraContent(
             .background(Color.Black)
             .safeDrawingPadding(),
     ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { flashMode = flashMode.next() }, modifier = Modifier.size(56.dp)) {
+                val (icon, description) = when (flashMode) {
+                    FlashMode.OFF -> Icons.Filled.FlashOff to R.string.flash_off
+                    FlashMode.AUTO -> Icons.Filled.FlashAuto to R.string.flash_auto
+                    FlashMode.ON -> Icons.Filled.FlashOn to R.string.flash_on
+                }
+                Icon(icon, contentDescription = stringResource(description), tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+        }
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f)) {
                 AndroidView(
@@ -242,14 +266,43 @@ private fun CameraContent(
                 )
             }
             ShutterButton(enabled = !capturing, onClick = capture)
-            IconButton(onClick = { flashMode = flashMode.next() }, modifier = Modifier.size(56.dp)) {
-                val (icon, description) = when (flashMode) {
-                    FlashMode.OFF -> Icons.Filled.FlashOff to R.string.flash_off
-                    FlashMode.AUTO -> Icons.Filled.FlashAuto to R.string.flash_auto
-                    FlashMode.ON -> Icons.Filled.FlashOn to R.string.flash_on
-                }
-                Icon(icon, contentDescription = stringResource(description), tint = Color.White, modifier = Modifier.size(30.dp))
+            if (lastPage != null && pageCount > 0) {
+                PagesButton(lastPage, pageCount, onOpenPages)
+            } else {
+                Spacer(Modifier.size(56.dp))
             }
+        }
+    }
+}
+
+/** Thumbnail of the last scanned page with the page count; opens the document. */
+@Composable
+private fun PagesButton(lastPage: ImageBitmap, pageCount: Int, onClick: () -> Unit) {
+    val description = stringResource(R.string.document_pages)
+    Box(Modifier.size(56.dp)) {
+        Image(
+            bitmap = lastPage,
+            contentDescription = description,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(52.dp)
+                .align(Alignment.BottomStart)
+                .clip(RoundedCornerShape(8.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                .clickable(onClickLabel = description, onClick = onClick),
+        )
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .size(22.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                pageCount.toString(),
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }
@@ -289,7 +342,13 @@ private fun DocumentOutline(points: List<Offset>?, modifier: Modifier) {
 }
 
 @Composable
-private fun PermissionRequest(onRequest: () -> Unit, onOpenSettings: () -> Unit, onOpenGallery: () -> Unit) {
+private fun PermissionRequest(
+    pageCount: Int,
+    onOpenPages: () -> Unit,
+    onRequest: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenGallery: () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -312,6 +371,11 @@ private fun PermissionRequest(onRequest: () -> Unit, onOpenSettings: () -> Unit,
             Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
             Spacer(Modifier.size(8.dp))
             Text(stringResource(R.string.import_from_gallery))
+        }
+        if (pageCount > 0) {
+            TextButton(onClick = onOpenPages) {
+                Text(stringResource(R.string.document_pages) + " (" + pageCount + ")")
+            }
         }
     }
 }
