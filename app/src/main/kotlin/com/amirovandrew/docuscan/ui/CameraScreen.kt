@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
@@ -158,6 +159,8 @@ private fun CameraContent(
             .build()
         LifecycleCameraController(context).apply {
             setEnabledUseCases(CameraController.IMAGE_CAPTURE or CameraController.IMAGE_ANALYSIS)
+            // Colour frames: tinted documents may differ from the table only in colour.
+            imageAnalysisOutputImageFormat = ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888
             imageCaptureMode = ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
             previewResolutionSelector = fourByThree
             imageCaptureResolutionSelector = fourByThree

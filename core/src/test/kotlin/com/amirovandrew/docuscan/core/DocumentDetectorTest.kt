@@ -110,6 +110,20 @@ class DocumentDetectorTest {
     }
 
     @Test
+    fun `finds a tinted form on a table of the same brightness`() {
+        // A pale yellow-green form (like a vehicle registration certificate) on a grey table:
+        // both have a luma of ~183, they only differ in colour.
+        val form = Scalar(190.0, 186.0, 150.0, 255.0)
+        val table = Scalar(183.0, 183.0, 183.0, 255.0)
+        val quad = Quad(Vec2(230.0, 70.0), Vec2(760.0, 85.0), Vec2(750.0, 1130.0), Vec2(215.0, 1120.0))
+        val scene = TestScenes.scene(
+            900, 1200, TestScenes.page(420, 840, form), quad,
+            background = table, noise = 3.0, lighting = 0.3,
+        )
+        assertCornersNear(quad, detectIn(scene), tolerance = 12.0)
+    }
+
+    @Test
     fun `does not invent a document on a plain white surface`() {
         val surface = Mat(1200, 900, CvType.CV_8UC4, Scalar(230.0, 228.0, 224.0, 255.0))
         val scene = TestScenes.scene(

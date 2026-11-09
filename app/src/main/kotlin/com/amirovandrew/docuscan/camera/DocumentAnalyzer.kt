@@ -16,7 +16,7 @@ import org.opencv.core.Mat
  *
  * CameraX calls [updateTransform] with the sensor-to-view matrix because the analyzer asks for
  * [ImageAnalysis.COORDINATE_SYSTEM_VIEW_REFERENCED]; frames are analysed in their native
- * orientation using only the luma plane.
+ * orientation. Frames must be RGBA ([ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888]).
  */
 class DocumentAnalyzer(
     private val onOutline: (List<Offset>?) -> Unit,
@@ -25,7 +25,7 @@ class DocumentAnalyzer(
     @Volatile
     private var sensorToView: Matrix? = null
 
-    private var luma = ByteArray(0)
+    private var pixels = ByteArray(0)
     private var frame: Mat? = null
     private var smoothed: FloatArray? = null
     private var misses = 0
@@ -83,24 +83,25 @@ class DocumentAnalyzer(
         val plane = image.planes[0]
         val width = image.width
         val height = image.height
+        val rowBytes = width * BYTES_PER_PIXEL
         val rowStride = plane.rowStride
         val buffer = plane.buffer
         buffer.rewind()
-        if (luma.size != width * height) luma = ByteArray(width * height)
-        if (rowStride == width) {
-            buffer.get(luma, 0, width * height)
+        if (pixels.size != rowBytes * height) pixels = ByteArray(rowBytes * height)
+        if (rowStride == rowBytes) {
+            buffer.get(pixels, 0, rowBytes * height)
         } else {
             for (row in 0 until height) {
                 buffer.position(row * rowStride)
-                buffer.get(luma, row * width, width)
+                buffer.get(pixels, row * rowBytes, rowBytes)
             }
         }
         val mat = frame?.takeIf { it.cols() == width && it.rows() == height }
-            ?: Mat(height, width, CvType.CV_8UC1).also {
+            ?: Mat(height, width, CvType.CV_8UC4).also {
                 frame?.release()
                 frame = it
             }
-        mat.put(0, 0, luma)
+        mat.put(0, 0, pixels)
         return DocumentDetector.detect(mat, LIVE_MIN_AREA)
     }
 
@@ -114,5 +115,6 @@ class DocumentAnalyzer(
         const val MAX_MISSES = 4
         const val SMOOTHING = 0.5f
         const val LIVE_MIN_AREA = 0.12
+        const val BYTES_PER_PIXEL = 4
     }
 }

@@ -1,5 +1,6 @@
 package com.amirovandrew.docuscan.core
 
+import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfInt
@@ -20,8 +21,10 @@ import kotlin.math.sqrt
  * The image is downscaled and text is wiped out with a morphological closing. Then several
  * binarisations are searched for large convex four-sided contours: two Canny edge maps with fixed
  * thresholds, one on a contrast-equalised copy with thresholds taken from the frame itself (for
- * white paper on a white table) and an Otsu threshold. Every candidate must be backed by a real
- * edge along its outline (see [sideSupport]); the biggest such candidate wins.
+ * white paper on a white table) and an Otsu threshold. Colour images are searched in their
+ * colour channels (Lab a* and b*) as well, for tinted paper as bright as the table. Every
+ * candidate must be backed by a real edge along its outline (see [sideSupport]); the biggest such
+ * candidate wins.
  */
 object DocumentDetector {
 
@@ -46,14 +49,16 @@ object DocumentDetector {
      */
     fun detect(image: Mat, minAreaFraction: Double = DEFAULT_MIN_AREA): Quad? {
         val supported = candidates(image, minAreaFraction).filter { it.isSupported }
-        val best = supported.maxByOrNull { it.quad.area() }?.quad ?: return null
+        // The page is normally the biggest outline, but a slightly bigger one with a poorly backed
+        // side must not beat an exact one: weigh the area by the edge support.
+        val best = supported.maxByOrNull { it.quad.area() * it.support } ?: return null
 
         // The same outline is usually found several times: as the outer and inner border of the
-        // (dilated) edge line and as the outline of the thresholded page. The outer one is the
-        // biggest but lies slightly outside the page, so average all of them.
+        // (dilated) edge line and as the outline of the thresholded page. Average them, trusting
+        // the better-backed ones more.
         val tolerance = NEAR_DUPLICATE_FRACTION * hypot(image.cols().toDouble(), image.rows().toDouble())
-        val cluster = supported.map { it.quad }.filter { other ->
-            best.corners.zip(other.corners).all { (a, b) -> a.distanceTo(b) <= tolerance }
+        val cluster = supported.filter { other ->
+            best.quad.corners.zip(other.quad.corners).all { (a, b) -> a.distanceTo(b) <= tolerance }
         }
         return average(cluster)
     }
@@ -79,25 +84,67 @@ object DocumentDetector {
         val minArea = frameArea * minAreaFraction
         val maxArea = frameArea * 0.995
 
+        val quads = ArrayList<Quad>()
+        // Brightness: the usual case of a page brighter or darker than the table.
+        val fields = arrayListOf(checkNotNull(searchChannel(small, minArea, maxArea, quads, colour = false)))
+        // Colour: tinted paper (forms, certificates) on a grey table can be exactly as bright as
+        // the table and only differ in colour, and vice versa for white paper on a wooden table.
+        if (image.channels() >= 3) {
+            for (chroma in chromaChannels(image, small.size())) {
+                searchChannel(chroma.track(), minArea, maxArea, quads, colour = true)?.let { fields += it }
+            }
+        }
+
+        quads.map { quad ->
+            // A side counts as backed by an edge if it is backed in any of the channels.
+            val perChannel = fields.map { (gradient, threshold) -> sideSupport(quad, gradient, threshold) }
+            val sides = (0..3).map { i -> perChannel.maxOf { it[i].first } to perChannel[0][i].second }
+            Candidate(
+                quad = quad.scale(1.0 / scale),
+                support = sides.sumOf { it.first }.toDouble() / max(1, sides.sumOf { it.second }),
+                weakestSide = sides.minOf { it.first.toDouble() / max(1, it.second) },
+            )
+        }
+    }
+
+    /**
+     * Looks for page outlines in one channel of the working image and adds them to [quads].
+     *
+     * @param colour [channel] is a colour channel: it is skipped when the scene has no real colour
+     *   contrast (its variations would be noise), and the fixed Canny thresholds, which are meant
+     *   for brightness, are not used.
+     * @return the gradient of the channel and the edge threshold to check candidates against, or
+     *   null if the channel was skipped.
+     */
+    private fun MatScope.searchChannel(
+        channel: Mat,
+        minArea: Double,
+        maxArea: Double,
+        quads: MutableList<Quad>,
+        colour: Boolean,
+    ): Pair<GradientField, Double>? {
         val blurred = mat()
-        Imgproc.GaussianBlur(small, blurred, Size(5.0, 5.0), 0.0)
+        Imgproc.GaussianBlur(channel, blurred, Size(5.0, 5.0), 0.0)
         // A closing removes dark details such as text, so mostly the outline of the page remains.
         val closeKernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(9.0, 9.0)).track()
         val closed = mat()
         Imgproc.morphologyEx(blurred, closed, Imgproc.MORPH_CLOSE, closeKernel)
+        // Measured after the closing, so that coloured ink does not count, only coloured areas.
+        if (colour && spread(closed) < MIN_COLOUR_SPREAD) return null
 
-        val quads = ArrayList<Quad>()
         val dilateKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0)).track()
-        val median = median(closed)
-        val cannyThresholds = listOf(
-            max(10.0, 0.66 * median) to min(255.0, max(30.0, 1.33 * median)),
-            20.0 to 60.0, // low-contrast scenes: white paper on a light table
-        )
         val edges = mat()
-        for ((low, high) in cannyThresholds) {
-            Imgproc.Canny(closed, edges, low, high)
-            Imgproc.dilate(edges, edges, dilateKernel)
-            collectQuads(edges, minArea, maxArea, quads)
+        if (!colour) {
+            val median = median(closed)
+            val cannyThresholds = listOf(
+                max(10.0, 0.66 * median) to min(255.0, max(30.0, 1.33 * median)),
+                20.0 to 60.0, // low-contrast scenes: white paper on a light table
+            )
+            for ((low, high) in cannyThresholds) {
+                Imgproc.Canny(closed, edges, low, high)
+                Imgproc.dilate(edges, edges, dilateKernel)
+                collectQuads(edges, minArea, maxArea, quads)
+            }
         }
 
         // White paper on a white table: the outline differs from the background by only a few
@@ -112,23 +159,34 @@ object DocumentDetector {
         Imgproc.dilate(edges, edges, dilateKernel)
         collectQuads(edges, minArea, maxArea, quads)
 
-        // Bright page on a darker background.
+        // The page as a region brighter (or, through the holes it leaves, darker) than the rest.
         val binary = mat()
         Imgproc.threshold(closed, binary, 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
         collectQuads(binary, minArea, maxArea, quads)
 
-        quads.map { quad ->
-            val sides = sideSupport(quad, gradient, high)
-            Candidate(
-                quad = quad.scale(1.0 / scale),
-                support = sides.sumOf { it.first }.toDouble() / max(1, sides.sumOf { it.second }),
-                weakestSide = sides.minOf { it.first.toDouble() / max(1, it.second) },
-            )
-        }
+        return gradient to high
     }
 
-    private fun average(quads: List<Quad>): Quad {
-        fun mean(pick: (Quad) -> Vec2) = Vec2(quads.sumOf { pick(it).x } / quads.size, quads.sumOf { pick(it).y } / quads.size)
+    /** The red-green and yellow-blue channels (CIE Lab a* and b*) of [image], scaled to [size]. */
+    private fun chromaChannels(image: Mat, size: Size): List<Mat> = matScope {
+        val small = mat()
+        Imgproc.resize(image, small, size, 0.0, 0.0, Imgproc.INTER_AREA)
+        val rgb = if (small.channels() == 4) mat().also { Imgproc.cvtColor(small, it, Imgproc.COLOR_RGBA2RGB) } else small
+        val lab = mat()
+        Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
+        val channels = ArrayList<Mat>()
+        Core.split(lab, channels)
+        channels[0].release()
+        listOf(channels[1], channels[2])
+    }
+
+    private fun average(candidates: List<Candidate>): Quad {
+        val weights = candidates.map { it.support * it.support }
+        val total = weights.sum()
+        fun mean(pick: (Quad) -> Vec2) = Vec2(
+            candidates.indices.sumOf { pick(candidates[it].quad).x * weights[it] } / total,
+            candidates.indices.sumOf { pick(candidates[it].quad).y * weights[it] } / total,
+        )
         return Quad(mean { it.topLeft }, mean { it.topRight }, mean { it.bottomRight }, mean { it.bottomLeft })
     }
 
@@ -277,6 +335,36 @@ object DocumentDetector {
     /** Keeps the adaptive pass from turning sensor noise of a featureless frame into edges. */
     private const val MIN_ADAPTIVE_THRESHOLD = 8.0
     private const val GRADIENT_BINS = 2048
+
+    /** Difference between the 98th and the 2nd percentile of an 8-bit channel. */
+    private fun spread(channel: Mat): Int {
+        val histogram = histogram(channel)
+        val total = histogram.sum()
+        fun level(percentile: Double): Int {
+            val wanted = (total * percentile).toLong()
+            var accumulated = 0L
+            for (level in 0..255) {
+                accumulated += histogram[level]
+                if (accumulated > wanted) return level
+            }
+            return 255
+        }
+        return level(0.98) - level(0.02)
+    }
+
+    /**
+     * Colour channels whose large areas vary less than this (in CIE Lab units) only hold noise.
+     * A pale green form on a grey table spreads about 14; white paper on a white table about 4.
+     */
+    private const val MIN_COLOUR_SPREAD = 9
+
+    private fun histogram(channel: Mat): IntArray {
+        val bytes = ByteArray((channel.total() * channel.channels()).toInt())
+        channel.get(0, 0, bytes)
+        val histogram = IntArray(256)
+        for (b in bytes) histogram[b.toInt() and 0xFF]++
+        return histogram
+    }
 
     private fun median(gray: Mat): Double {
         val bytes = ByteArray((gray.total() * gray.channels()).toInt())
