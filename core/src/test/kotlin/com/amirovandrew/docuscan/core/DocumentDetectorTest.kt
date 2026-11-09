@@ -85,6 +85,42 @@ class DocumentDetectorTest {
     }
 
     @Test
+    fun `finds white paper on a white table`() {
+        // The paper is only ~10 levels brighter than the table, while the light falls off by
+        // ~30 levels across the frame: no global threshold separates the two.
+        val paper = Scalar(238.0, 238.0, 236.0, 255.0)
+        val ink = Scalar(60.0, 70.0, 140.0, 255.0)
+        val table = Scalar(228.0, 226.0, 222.0, 255.0)
+        val cases = listOf(
+            Quad(Vec2(170.0, 160.0), Vec2(640.0, 170.0), Vec2(690.0, 860.0), Vec2(130.0, 850.0)),
+            TestScenes.projectRectangle(
+                210.0, 297.0, 900.0, 1200.0, focal = 900.0, distance = 380.0,
+                tiltX = 25.0, tiltY = -8.0, roll = -3.0,
+            ).normalized(),
+        )
+        for (quad in cases) {
+            for (shadow in listOf(0.0, 0.05)) {
+                val scene = TestScenes.scene(
+                    900, 1200, TestScenes.page(420, 594, paper, ink), quad,
+                    background = table, noise = 2.5, shadow = shadow, lighting = 0.25,
+                )
+                assertCornersNear(quad, detectIn(scene), tolerance = 12.0)
+            }
+        }
+    }
+
+    @Test
+    fun `does not invent a document on a plain white surface`() {
+        val surface = Mat(1200, 900, CvType.CV_8UC4, Scalar(230.0, 228.0, 224.0, 255.0))
+        val scene = TestScenes.scene(
+            900, 1200, surface, Quad.fullFrame(900.0, 1200.0),
+            background = Scalar(230.0, 228.0, 224.0, 255.0), noise = 3.0, lighting = 0.25,
+        )
+        surface.release()
+        assertNull(detectIn(scene))
+    }
+
+    @Test
     fun `reports nothing when there is no document`() {
         val noise = Mat(600, 800, CvType.CV_8UC1)
         Core.randn(noise, 90.0, 20.0)

@@ -3,6 +3,7 @@ package com.amirovandrew.docuscan.core
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Scalar
@@ -42,6 +43,9 @@ object TestScenes {
 
     /**
      * Draws [page] into a [width]x[height] scene so that its corners land on [quad].
+     *
+     * @param shadow darkening (0..1) of a soft shadow the page casts towards the bottom right.
+     * @param lighting strength (0..1) of a light falloff from the top-left to the bottom-right corner.
      */
     fun scene(
         width: Int,
@@ -51,8 +55,19 @@ object TestScenes {
         background: Scalar = Scalar(60.0, 55.0, 50.0, 255.0),
         texture: Boolean = false,
         noise: Double = 4.0,
+        shadow: Double = 0.0,
+        lighting: Double = 0.0,
     ): Mat {
         val scene = Mat(height, width, CvType.CV_8UC4, background)
+        if (shadow > 0) {
+            val offset = width / 150.0
+            val k = 1.0 - shadow
+            val dark = Scalar(background.`val`[0] * k, background.`val`[1] * k, background.`val`[2] * k, 255.0)
+            val shifted = quad.corners.map { Point(it.x + offset, it.y + offset) }
+            Imgproc.fillConvexPoly(scene, MatOfPoint(*shifted.toTypedArray()), dark)
+            val blur = (width / 60) or 1
+            Imgproc.GaussianBlur(scene, scene, Size(blur.toDouble(), blur.toDouble()), 0.0)
+        }
         if (texture) {
             val random = Random(7)
             repeat(120) {
@@ -75,6 +90,21 @@ object TestScenes {
             Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT,
         )
         Imgproc.GaussianBlur(scene, scene, Size(3.0, 3.0), 0.0)
+        if (lighting > 0) {
+            val falloff = Mat(height, width, CvType.CV_32FC4)
+            val row = FloatArray(width * 4)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val k = (1.0 - lighting * (x.toDouble() / width + y.toDouble() / height) / 2).toFloat()
+                    row[x * 4] = k; row[x * 4 + 1] = k; row[x * 4 + 2] = k; row[x * 4 + 3] = 1f
+                }
+                falloff.put(y, 0, row)
+            }
+            val f = Mat()
+            scene.convertTo(f, CvType.CV_32FC4)
+            Core.multiply(f, falloff, f)
+            f.convertTo(scene, CvType.CV_8UC4)
+        }
         if (noise > 0) {
             val n = Mat(height, width, CvType.CV_16SC4)
             Core.randn(n, 0.0, noise)
