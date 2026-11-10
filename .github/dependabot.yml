@@ -1,0 +1,31 @@
+# Dependabot opens pull requests when newer versions exist. New releases are only proposed
+# after they have been public for a week, which gives time for a bad release to be noticed.
+version: 2
+updates:
+  # Build steps, pinned to commit hashes in .github/workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      build-steps:
+        patterns: ["*"]
+
+  # Libraries and build plugins (gradle/libs.versions.toml).
+  # Such a pull request fails the build until the checksums of the new versions are added to
+  # gradle/verification-metadata.xml: see "Обновление библиотек" in the README.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      libraries:
+        patterns: ["*"]
+    ignore:
+      # The image processing is written against the OpenCV 4 API.
+      - dependency-name: "org.opencv:opencv"
+        update-types: ["version-update:semver-major"]

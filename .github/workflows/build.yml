@@ -5,28 +5,59 @@ on:
   pull_request:
   workflow_dispatch:
 
+# The build only reads the code. Nothing here can change the repository.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # Third-party steps are pinned to exact commits, so a re-tagged release cannot change what
+      # runs here. Dependabot (.github/dependabot.yml) proposes updates of the pins.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Don't leave the repository token behind for the build scripts.
+          persist-credentials: false
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v4
+      # Also verifies that gradle/wrapper/gradle-wrapper.jar is a genuine Gradle wrapper.
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          # The open-source cache; the default one is a closed-source component.
+          cache-provider: basic
 
+      # Regenerating the checksum list silently adds a second trusted checksum ("also-trust")
+      # when a file that is already listed has changed. That must never get in unnoticed.
+      - name: Every library file has exactly one trusted checksum
+        run: |
+          if grep -n "also-trust" gradle/verification-metadata.xml; then
+            echo "::error file=gradle/verification-metadata.xml::A file that was already pinned has changed. See 'Обновление библиотек' in the README."
+            exit 1
+          fi
+
+      # "--dependency-verification strict": every downloaded library and build plugin must match
+      # its checksum in gradle/verification-metadata.xml (see "Сборка" in the README).
       - name: Unit tests (image processing)
-        run: ./gradlew :core:test
+        run: ./gradlew --dependency-verification strict :core:test
+
+      # Fails if the release build asks for a permission or exposes a component that is not
+      # on the reviewed list in app/build.gradle.kts.
+      - name: Check permissions of the release build
+        run: ./gradlew --dependency-verification strict :app:guardReleaseManifest
 
       - name: Build APKs
-        run: ./gradlew :app:assembleDebug :app:assembleRelease
+        run: ./gradlew --dependency-verification strict :app:assembleDebug :app:assembleRelease
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DocuScan-apk
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
