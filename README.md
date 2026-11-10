@@ -74,11 +74,13 @@ GitHub Actions (`.github/workflows/build.yml`) на каждый push запус
 Dependabot (`.github/dependabot.yml`) раз в неделю предлагает обновления шагов сборки и раз в месяц — библиотек, причём только версии, вышедшие не меньше недели назад. Pull request с обновлением библиотек не соберётся, пока в репозитории нет контрольных сумм новых версий. Добавить их можно так (в ветке этого pull request):
 
 ```bash
-./gradlew --write-verification-metadata sha256 --rerun-tasks help :core:test \
+./gradlew --gradle-user-home "$(mktemp -d)" --write-verification-metadata sha256 --rerun-tasks help :core:test \
     :app:guardReleaseManifest :app:lintDebug :app:assembleDebug :app:assembleRelease
 git diff --stat gradle/verification-metadata.xml   # должны добавиться только обновлённые библиотеки
 grep -n also-trust gradle/verification-metadata.xml # не должно найти ничего
 ```
+
+Пустой кэш Gradle (`--gradle-user-home` с новой папкой) здесь обязателен. Файлы, которые уже лежат в кэше, Gradle в список не записывает, и сборка на чистой машине потом падает на «неизвестных» служебных файлах (родительских POM и BOM).
 
 Старые записи при этом остаются. Если файл уже известной версии изменился, Gradle молча допишет вторую сумму строкой `also-trust`. Такое изменение коммитить нельзя, сначала нужно разобраться; сборка в GitHub Actions его тоже не пропустит. Версию Gradle обновляет команда `./gradlew wrapper --gradle-version X --gradle-distribution-sha256-sum СУММА`, сумму нужно взять на gradle.org/release-checksums.
 
