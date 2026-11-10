@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import com.amirovandrew.docuscan.core.TempFilePolicy
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -65,9 +66,11 @@ object TempFiles {
     fun cleanUp(context: Context, now: Long = System.currentTimeMillis()): Boolean {
         var remaining = false
         shareRoot(context).listFiles()?.forEach { entry ->
-            val age = now - entry.lastModified()
-            // A timestamp far in the future means the clock was changed: don't keep such files forever.
-            if (age >= SHARE_LIFETIME_MS || age < -SHARE_LIFETIME_MS) entry.deleteRecursively() else remaining = true
+            if (TempFilePolicy.isExpired(now - entry.lastModified(), SHARE_LIFETIME_MS)) {
+                entry.deleteRecursively()
+            } else {
+                remaining = true
+            }
         }
         val scan = scanDirectory(context)
         if (scanSessions.get() > 0) {
