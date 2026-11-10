@@ -7,11 +7,9 @@
         android:name="android.hardware.camera.any"
         android:required="false" />
 
+    <!-- The only permission. Scans are saved without one: through MediaStore on Android 10+,
+         through the system file dialog before that. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Only needed to save pictures on Android 9 and older. -->
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
     <!-- Pulled in by a CameraX dependency (Media3); the app never uses the network. -->
     <uses-permission
         android:name="android.permission.ACCESS_NETWORK_STATE"
@@ -19,14 +17,17 @@
 
     <application
         android:name=".DocuScanApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DocuScan">
+        android:theme="@style/Theme.DocuScan"
+        tools:targetApi="tiramisu">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -36,6 +37,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Removes temporary files some time after they were needed, see TempFiles. -->
+        <receiver
+            android:name=".CleanupReceiver"
+            android:exported="false" />
 
         <!-- Hands scans to other apps ("Share") without any storage permission. -->
         <provider

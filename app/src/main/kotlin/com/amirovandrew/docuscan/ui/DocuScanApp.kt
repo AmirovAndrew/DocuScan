@@ -1,10 +1,14 @@
 package com.amirovandrew.docuscan.ui
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amirovandrew.docuscan.R
+import com.amirovandrew.docuscan.SaveTarget
 import com.amirovandrew.docuscan.ScannerEvent
 import com.amirovandrew.docuscan.ScannerViewModel
 import com.amirovandrew.docuscan.Screen
@@ -33,6 +38,23 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
     val context = LocalContext.current
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
 
+    // Android 8 and 9 can only write to the gallery with access to all shared files. Instead of
+    // asking for that, the user picks the destination in the system file dialog there.
+    val pickDestination = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+    val createPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) viewModel.saveAsPdf(SaveTarget.Document(uri))
+    }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree != null) viewModel.saveAsImages(SaveTarget.Folder(tree))
+    }
+    fun openFileDialog(launch: () -> Unit) {
+        try {
+            launch()
+        } catch (_: ActivityNotFoundException) {
+            viewModel.onSaveUnavailable()
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             val (message, duration) = when (event) {
@@ -42,6 +64,7 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
                 }
                 ScannerEvent.SavedImages -> R.string.saved to Toast.LENGTH_LONG
                 ScannerEvent.SavedPdf -> R.string.saved_pdf to Toast.LENGTH_LONG
+                ScannerEvent.SavedToChosenPlace -> R.string.saved_elsewhere to Toast.LENGTH_SHORT
                 ScannerEvent.DocumentNotFound -> R.string.document_not_found to Toast.LENGTH_LONG
                 ScannerEvent.CaptureFailed -> R.string.error_capture to Toast.LENGTH_SHORT
                 ScannerEvent.OpenFailed -> R.string.error_open to Toast.LENGTH_SHORT
@@ -105,8 +128,16 @@ fun DocuScanApp(viewModel: ScannerViewModel = viewModel()) {
                     onMovePage = viewModel::movePage,
                     onDeletePage = viewModel::deletePage,
                     onDiscard = { confirmDiscard = true },
-                    onSaveImages = viewModel::saveAsImages,
-                    onSavePdf = viewModel::saveAsPdf,
+                    onSaveImages = {
+                        if (pickDestination) openFileDialog { pickFolder.launch(null) } else viewModel.saveAsImages()
+                    },
+                    onSavePdf = {
+                        if (pickDestination) {
+                            openFileDialog { createPdf.launch(viewModel.newDocumentName() + ".pdf") }
+                        } else {
+                            viewModel.saveAsPdf()
+                        }
+                    },
                     onShareImages = viewModel::shareAsImages,
                     onSharePdf = viewModel::shareAsPdf,
                 )

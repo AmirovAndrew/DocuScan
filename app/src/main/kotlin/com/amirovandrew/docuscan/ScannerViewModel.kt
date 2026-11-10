@@ -1,7 +1,9 @@
 package com.amirovandrew.docuscan
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -32,6 +34,7 @@ import kotlinx.coroutines.withContext
 import org.opencv.core.Mat
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,9 +71,24 @@ data class ScannerUiState(
     val editingPageId: Long? = null,
 )
 
+/** Where a document is saved. */
+sealed interface SaveTarget {
+    /** The DocuScan folders of the gallery and of Download (Android 10 and newer). */
+    data object SharedStorage : SaveTarget
+
+    /** A document the user created in the system file dialog; used for a PDF. */
+    data class Document(val uri: Uri) : SaveTarget
+
+    /** A folder the user picked in the system file dialog; used for photos. */
+    data class Folder(val tree: Uri) : SaveTarget
+}
+
 sealed interface ScannerEvent {
     data object SavedImages : ScannerEvent
     data object SavedPdf : ScannerEvent
+
+    /** Saved to a place the user picked in the system file dialog. */
+    data object SavedToChosenPlace : ScannerEvent
     data object DocumentNotFound : ScannerEvent
     data object CaptureFailed : ScannerEvent
     data object OpenFailed : ScannerEvent
@@ -88,14 +106,14 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private val cleanupScope = CoroutineScope(SupervisorJob() + processing)
     private val preferences = ScanPreferences(application)
 
-    /** Photos of the pages. Only valid while the app runs, so leftovers are removed at start. */
-    private val scanDirectory = File(application.cacheDir, "scan").apply {
-        deleteRecursively()
-        mkdirs()
-    }
+    /** Photos of the pages, see [TempFiles]. */
+    private val scanDirectory = TempFiles.scanDirectory(application)
 
-    /** Files handed to other apps; shared through the FileProvider (see res/xml/file_paths.xml). */
-    private val shareDirectory = File(application.cacheDir, "share").apply { deleteRecursively() }
+    init {
+        // Removes page photos left behind by an earlier run, then shared files past their lifetime.
+        TempFiles.beginScanSession(application)
+        TempFiles.cleanUpAndReschedule(application)
+    }
 
     private val _state = MutableStateFlow(ScannerUiState(adjustments = preferences.load()))
     val state: StateFlow<ScannerUiState> = _state.asStateFlow()
@@ -127,7 +145,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         val file = newPhotoFile()
         val copied = withContext(Dispatchers.IO) {
             runCatching { ImageIo.copy(getApplication(), uri, file) }
-                .onFailure { Log.e(TAG, "Unable to copy $uri", it) }
+                // Neither the address of the picked image nor messages that may quote it are logged.
+                .onFailure { Log.e(TAG, "Unable to copy the picked image: ${it.javaClass.simpleName}") }
                 .isSuccess
         }
         if (copied) {
@@ -344,22 +363,44 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         cleanupScope.launch { files.forEach { it.delete() } }
     }
 
-    fun saveAsImages() = save(asPdf = false)
+    /**
+     * Saves the pages as photos: to the gallery ([SaveTarget.SharedStorage]) or into a
+     * [SaveTarget.Folder].
+     */
+    fun saveAsImages(target: SaveTarget = SaveTarget.SharedStorage) = save(asPdf = false, target)
 
-    fun saveAsPdf() = save(asPdf = true)
+    /**
+     * Saves the document as one PDF: to Download ([SaveTarget.SharedStorage]) or into a
+     * [SaveTarget.Document].
+     */
+    fun saveAsPdf(target: SaveTarget = SaveTarget.SharedStorage) = save(asPdf = true, target)
 
-    private fun save(asPdf: Boolean) = runBusy {
+    /** The system file dialog could not be opened. */
+    fun onSaveUnavailable() {
+        viewModelScope.launch { _events.send(ScannerEvent.SaveFailed) }
+    }
+
+    private fun save(asPdf: Boolean, target: SaveTarget) = runBusy {
         val pages = _state.value.pages
-        if (pages.isEmpty()) return@runBusy
-        val name = documentName()
         val context = getApplication<Application>()
+        if (pages.isEmpty()) {
+            // Nothing to write, e.g. the app was restarted while the file dialog was open:
+            // don't leave the empty document behind.
+            if (target is SaveTarget.Document) {
+                withContext(Dispatchers.IO) { ImageIo.deleteDocument(context, target.uri) }
+            }
+            return@runBusy
+        }
+        val name = newDocumentName()
         val result = withContext(processing) {
             runCatching {
                 if (asPdf) {
-                    ImageIo.save(context, "$name.pdf", PDF_MIME_TYPE, ImageIo.Folder.DOWNLOADS) { writePdf(pages, it) }
+                    writeFile(context, target, "$name.pdf", PDF_MIME_TYPE, ImageIo.Folder.DOWNLOADS) {
+                        writePdf(pages, it)
+                    }
                 } else {
                     exportImages(pages, name) { fileName, encoded ->
-                        ImageIo.save(context, fileName, encoded.format.mimeType, ImageIo.Folder.PICTURES) {
+                        writeFile(context, target, fileName, encoded.format.mimeType, ImageIo.Folder.PICTURES) {
                             it.write(encoded.bytes)
                         }
                     }
@@ -370,10 +411,37 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             val files = pages.map { it.photo }
             _state.update { it.copy(screen = Screen.CAMERA, pages = emptyList()) }
             cleanupScope.launch { files.forEach { it.delete() } }
-            _events.send(if (asPdf) ScannerEvent.SavedPdf else ScannerEvent.SavedImages)
+            _events.send(
+                when {
+                    target != SaveTarget.SharedStorage -> ScannerEvent.SavedToChosenPlace
+                    asPdf -> ScannerEvent.SavedPdf
+                    else -> ScannerEvent.SavedImages
+                },
+            )
         }.onFailure { error ->
             Log.e(TAG, "Unable to save", error)
             _events.send(ScannerEvent.SaveFailed)
+        }
+    }
+
+    /** Creates one file of a saved document at [target]. Runs on [processing]. */
+    private fun writeFile(
+        context: Context,
+        target: SaveTarget,
+        fileName: String,
+        mimeType: String,
+        folder: ImageIo.Folder,
+        write: (OutputStream) -> Unit,
+    ) {
+        when (target) {
+            SaveTarget.SharedStorage -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    throw IOException("Before Android 10 the destination must be picked by the user")
+                }
+                ImageIo.saveToSharedStorage(context, fileName, mimeType, folder, write)
+            }
+            is SaveTarget.Document -> ImageIo.writeDocument(context, target.uri, write)
+            is SaveTarget.Folder -> ImageIo.createInFolder(context, target.tree, fileName, mimeType, write)
         }
     }
 
@@ -388,13 +456,14 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private fun share(asPdf: Boolean) = runBusy {
         val pages = _state.value.pages
         if (pages.isEmpty()) return@runBusy
-        val name = documentName()
+        val name = newDocumentName()
         val context = getApplication<Application>()
         val result = withContext(processing) {
             runCatching {
-                // Files of an earlier share have been picked up by now.
-                shareDirectory.deleteRecursively()
-                shareDirectory.mkdirs()
+                // Files of earlier shares stay until their lifetime is over: the app that
+                // received them may not have read them yet.
+                TempFiles.cleanUp(context)
+                val shareDirectory = TempFiles.newShareDirectory(context)
                 val files = ArrayList<File>()
                 val mimeTypes = LinkedHashSet<String>()
                 if (asPdf) {
@@ -412,6 +481,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 ScannerEvent.Share(uris, mimeTypes.singleOrNull() ?: "image/*")
             }
         }
+        // Whatever happens next, the files get removed once their lifetime is over.
+        TempFiles.scheduleCleanUp(context)
         result.onSuccess { _events.send(it) }.onFailure { error ->
             Log.e(TAG, "Unable to prepare files for sharing", error)
             _events.send(ScannerEvent.ShareFailed)
@@ -436,7 +507,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun documentName() = "DocuScan_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+    /** File name, without extension, for a document saved or shared now. */
+    fun newDocumentName(): String = "DocuScan_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     /**
      * Renders [scan] at full resolution and hands the result to [use]. Only one page is held in
@@ -488,10 +560,13 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
+        TempFiles.endScanSession()
+        val context = getApplication<Application>()
         cleanupScope.launch {
             releasePage()
             releasePhoto()
-            scanDirectory.deleteRecursively()
+            // The page photos are of no use any more; shared files stay for their lifetime.
+            TempFiles.cleanUp(context)
         }
     }
 

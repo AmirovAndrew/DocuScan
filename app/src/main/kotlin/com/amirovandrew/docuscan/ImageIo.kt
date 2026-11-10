@@ -5,14 +5,16 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
 import androidx.exifinterface.media.ExifInterface
+import com.amirovandrew.docuscan.core.copyAtMost
 import org.opencv.android.Utils
 import org.opencv.core.Mat
 import java.io.File
@@ -109,61 +111,100 @@ object ImageIo {
         return bitmap
     }
 
-    /** Copies the image behind [uri] (e.g. from the photo picker) into [file]. */
+    /**
+     * Copies the image behind [uri] (e.g. from the photo picker) into [file].
+     *
+     * @throws com.amirovandrew.docuscan.core.InputTooLargeException if it is larger than
+     *   [MAX_IMPORT_BYTES]; the caller removes the partial [file].
+     */
     fun copy(context: Context, uri: Uri, file: File) {
-        val input = context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
-        input.use { source -> FileOutputStream(file).use { source.copyTo(it) } }
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw FileNotFoundException("The picked image cannot be opened")
+        input.use { source -> FileOutputStream(file).use { copyAtMost(source, it, MAX_IMPORT_BYTES) } }
     }
+
+    /** No photo is this large; a bigger "image" would only fill up the storage. */
+    const val MAX_IMPORT_BYTES = 100L * 1024 * 1024
 
     enum class Folder { PICTURES, DOWNLOADS }
 
     /**
      * Creates [fileName] in the DocuScan folder of Pictures or Download, where the gallery and file
      * managers see it, and lets [write] fill it. A half-written file is removed on failure.
+     *
+     * Needs no permission, but only exists on Android 10 and newer; older versions save through
+     * the system file dialog instead ([writeDocument], [createInFolder]).
      */
-    fun save(context: Context, fileName: String, mimeType: String, folder: Folder, write: (OutputStream) -> Unit): Uri {
-        val directory = when (folder) {
-            Folder.PICTURES -> Environment.DIRECTORY_PICTURES
-            Folder.DOWNLOADS -> Environment.DIRECTORY_DOWNLOADS
+    @RequiresApi(Build.VERSION_CODES.Q)
+    fun saveToSharedStorage(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        folder: Folder,
+        write: (OutputStream) -> Unit,
+    ): Uri {
+        val resolver = context.contentResolver
+        val (collection, directory) = when (folder) {
+            Folder.PICTURES ->
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to Environment.DIRECTORY_PICTURES
+            Folder.DOWNLOADS ->
+                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to Environment.DIRECTORY_DOWNLOADS
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val resolver = context.contentResolver
-            val collection = when (folder) {
-                Folder.PICTURES -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                Folder.DOWNLOADS -> MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            }
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "$directory/$ALBUM")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-            val uri = resolver.insert(collection, values) ?: throw IOException("Unable to create $fileName")
-            try {
-                val stream = resolver.openOutputStream(uri) ?: throw IOException("Unable to open $uri")
-                stream.use(write)
-                values.clear()
-                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-            } catch (e: Exception) {
-                resolver.delete(uri, null, null)
-                throw e
-            }
-            return uri
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "$directory/$ALBUM")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-
-        @Suppress("DEPRECATION")
-        val target = File(Environment.getExternalStoragePublicDirectory(directory), ALBUM)
-        if (!target.isDirectory && !target.mkdirs()) throw IOException("Unable to create $target")
-        val file = File(target, fileName)
+        val uri = resolver.insert(collection, values) ?: throw IOException("Unable to create $fileName")
         try {
-            FileOutputStream(file).use(write)
+            val stream = resolver.openOutputStream(uri) ?: throw IOException("Unable to open $fileName")
+            stream.use(write)
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
         } catch (e: Exception) {
-            file.delete()
+            resolver.delete(uri, null, null)
             throw e
         }
-        MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mimeType), null)
-        return Uri.fromFile(file)
+        return uri
+    }
+
+    /**
+     * Fills a document the user created in the system file dialog
+     * ([android.content.Intent.ACTION_CREATE_DOCUMENT]). The document is removed again on failure.
+     */
+    fun writeDocument(context: Context, document: Uri, write: (OutputStream) -> Unit) {
+        try {
+            val stream = context.contentResolver.openOutputStream(document)
+                ?: throw IOException("Unable to open the document for writing")
+            stream.use(write)
+        } catch (e: Exception) {
+            deleteDocument(context, document)
+            throw e
+        }
+    }
+
+    /**
+     * Creates [fileName] in a folder the user picked in the system file dialog
+     * ([android.content.Intent.ACTION_OPEN_DOCUMENT_TREE]) and lets [write] fill it.
+     */
+    fun createInFolder(
+        context: Context,
+        tree: Uri,
+        fileName: String,
+        mimeType: String,
+        write: (OutputStream) -> Unit,
+    ): Uri {
+        val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        val document = DocumentsContract.createDocument(context.contentResolver, folder, mimeType, fileName)
+            ?: throw IOException("Unable to create $fileName")
+        writeDocument(context, document, write)
+        return document
+    }
+
+    /** Removes a document created through the system file dialog; failures are ignored. */
+    fun deleteDocument(context: Context, document: Uri) {
+        runCatching { DocumentsContract.deleteDocument(context.contentResolver, document) }
     }
 }

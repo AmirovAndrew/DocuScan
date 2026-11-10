@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -383,12 +382,7 @@ private fun PermissionRequest(
     }
 }
 
-private fun requiredPermissions(): Array<String> =
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-        arrayOf(Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-    } else {
-        arrayOf(Manifest.permission.CAMERA)
-    }
+private fun requiredPermissions(): Array<String> = arrayOf(Manifest.permission.CAMERA)
 
 private fun isGranted(context: Context, permission: String) =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

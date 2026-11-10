@@ -63,9 +63,10 @@
 
     <string name="saved">Сохранено в галерею (Pictures/DocuScan)</string>
     <string name="saved_pdf">PDF сохранён в папку Download/DocuScan</string>
+    <string name="saved_elsewhere">Сохранено</string>
     <string name="document_not_found">Документ не найден — перетащите углы вручную</string>
     <string name="error_capture">Не удалось сделать снимок</string>
     <string name="error_open">Не удалось открыть изображение</string>
-    <string name="error_save">Не удалось сохранить изображение</string>
+    <string name="error_save">Не удалось сохранить документ</string>
     <string name="error_share">Не удалось подготовить файлы для отправки</string>
 </resources>

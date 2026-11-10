@@ -17,4 +17,16 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        TempFiles.cleanUpAndReschedule(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Temporary files that are still needed get checked again later, even if the app is
+        // closed by then.
+        TempFiles.cleanUpAndReschedule(this)
+    }
 }

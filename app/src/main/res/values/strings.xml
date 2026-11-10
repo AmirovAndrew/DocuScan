@@ -63,9 +63,10 @@
 
     <string name="saved">Saved to the gallery (Pictures/DocuScan)</string>
     <string name="saved_pdf">PDF saved to Download/DocuScan</string>
+    <string name="saved_elsewhere">Saved</string>
     <string name="document_not_found">Document not detected — drag the corners into place</string>
     <string name="error_capture">Couldn\'t take the photo</string>
     <string name="error_open">Couldn\'t open the image</string>
-    <string name="error_save">Couldn\'t save the image</string>
+    <string name="error_save">Couldn\'t save the document</string>
     <string name="error_share">Couldn\'t prepare the files to share</string>
 </resources>
