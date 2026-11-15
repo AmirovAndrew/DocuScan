@@ -1,0 +1,13 @@
+# Map preprocessing (tools/preprocess_osm.py)
+numpy>=1.26
+shapely>=2.0
+mapbox_earcut>=1.0
+scipy>=1.11
+pillow>=10.0
+requests>=2.31
+# --source pbf only
+osmium>=4.0
+# tools/fetch_overture_osm.py only (development fallback)
+pyarrow>=15.0
+# tools/inspect_chunks.py --png only
+matplotlib>=3.8

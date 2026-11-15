@@ -16,12 +16,20 @@ var _lines: PackedStringArray = []
 
 func _ready() -> void:
 	var args: Dictionary = main.args
+	if main.has_city and not main.streamer.initial_done:
+		var t0 := Time.get_ticks_msec()
+		await main.streamer.initial_load_done
+		log_line("initial city load took %d ms" % (Time.get_ticks_msec() - t0))
 	if args.has("autotest"):
 		await _autotest(args)
 		if args.has("touchtest"):
 			await _touch_test()
 		if args.has("collidetest"):
 			await _collision_test()
+		if args.has("buildingtest"):
+			await _building_collision_test()
+		if args.has("streamtest"):
+			await _stream_test()
 	if args.has("screenshot"):
 		await _screenshot(args)
 	if args.has("autotest") or args.has("screenshot"):
@@ -170,6 +178,64 @@ func _collision_test() -> void:
 	var d := (player.global_position - (wall.global_position - Vector3.UP * 2.0)).dot(fwd)
 	log_line("collision: player stopped %.2f m in front of the wall centre plane (expect ~ -0.48)" % d)
 	wall.queue_free()
+
+
+## Finds the nearest building wall by ray casting, stands 4 m in front of it and walks
+## into it. The player must stop one capsule radius from the wall.
+func _building_collision_test() -> void:
+	var player: CharacterBody3D = main.player
+	await get_tree().physics_frame
+	var space := player.get_world_3d().direct_space_state
+	var origin := player.global_position + Vector3(0, 1.0, 0)
+	var best := {}
+	for i in 72:
+		var dir := Vector3(sin(i * TAU / 72.0), 0, cos(i * TAU / 72.0))
+		var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * 120.0)
+		q.exclude = [player.get_rid()]
+		var hit := space.intersect_ray(q)
+		if hit and (best.is_empty() or origin.distance_to(hit["position"]) < best["d"]):
+			best = {"pos": hit["position"], "normal": hit["normal"], "d": origin.distance_to(hit["position"])}
+	if best.is_empty():
+		log_line("building collision: no wall within 120 m of %s" % _v(origin))
+		return
+	var n: Vector3 = best["normal"]
+	n.y = 0.0
+	n = n.normalized()
+	var wall: Vector3 = best["pos"]
+	player.global_position = Vector3(wall.x, 0.05, wall.z) + n * 4.0
+	player.set_view(atan2(n.x, n.z), 0.0)
+	player.velocity = Vector3.ZERO
+	for i in 3:
+		await get_tree().physics_frame
+	player.autopilot_move = Vector2(0, -1)
+	for i in 300:
+		await get_tree().physics_frame
+	player.autopilot_move = Vector2.ZERO
+	var gap := (player.global_position - Vector3(wall.x, player.global_position.y, wall.z)).dot(n)
+	log_line("building collision: wall found %.1f m away; after walking 5 s into it the player is %.2f m from the wall (capsule radius 0.28)" % [best["d"], gap])
+
+
+## Teleports 600 m away and checks that chunks stream in there and out behind.
+func _stream_test() -> void:
+	var player: CharacterBody3D = main.player
+	var streamer: Node3D = main.streamer
+	var before: Array = streamer.chunks.keys()
+	var b: Rect2 = streamer.bounds
+	var target := player.global_position + Vector3(600, 0, 0)
+	if target.x > b.end.x - 10.0:
+		target.x = player.global_position.x - 600.0
+	player.global_position = target
+	var t0 := Time.get_ticks_msec()
+	var key := "%d,%d" % [floori(target.x / streamer.chunk_size), floori(target.z / streamer.chunk_size)]
+	while Time.get_ticks_msec() - t0 < 8000:
+		await get_tree().process_frame
+		if streamer.chunks.has(key) and streamer.loaded_stats()["pending"] == 0:
+			break
+	var after: Array = streamer.chunks.keys()
+	var added := after.filter(func(k): return not before.has(k)).size()
+	var removed := before.filter(func(k): return not after.has(k)).size()
+	log_line("streaming: moved to %s; chunk %s loaded=%s after %d ms; +%d / -%d chunks, %d resident" % [
+		_v(target), key, streamer.chunks.has(key), Time.get_ticks_msec() - t0, added, removed, after.size()])
 
 
 func _screenshot(args: Dictionary) -> void:

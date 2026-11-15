@@ -4,9 +4,9 @@
 // comes from COLOR.r (kind / 8). Roads and paths carry ribbon coordinates in UV
 // (x = across the ribbon 0..1, y = metres along it) for tyre ruts / trodden lines.
 //
-// Street-lamp light on the snow is not computed per light: each chunk bakes a small
-// "light map" texture of warm pools (see city/light_map_baker.gd) and this shader adds
-// albedo * light. That keeps real-time lights to a handful while every lamp still lights
+// Street-lamp light on the snow is not computed per light: the preprocessor bakes a
+// small "light map" per chunk (tools/preprocess_osm.py, bake_light_map) holding warm lamp
+// pools and window spill, and this shader adds albedo * light. That keeps real-time lights to a handful while every lamp still lights
 // the snow (the Mobile renderer only allows 8 lights per mesh anyway).
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert, specular_schlick_ggx;
@@ -94,7 +94,8 @@ void fragment() {
 	NORMAL_MAP_DEPTH = nmap;
 
 	vec2 luv = (wp - light_rect.xy) * light_rect.zw;
-	vec3 lamp = texture(light_map, luv).rgb * light_strength;
+	vec3 lamp = texture(light_map, luv).rgb;
+	lamp = lamp * lamp * light_strength;  // stored sqrt-encoded for precision in the darks
 
 	// Sparkle: tiny ice crystals glint, re-rolled as the view direction changes.
 	vec3 view_ws = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
