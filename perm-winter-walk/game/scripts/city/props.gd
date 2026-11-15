@@ -8,6 +8,10 @@ const LAMP_PARK_HEAD := Vector3(0.0, 3.95, 0.0)
 static var _cache := {}
 
 
+static func clear_cache() -> void:
+	_cache.clear()
+
+
 static func street_lamp_mesh() -> ArrayMesh:
 	if _cache.has("street_lamp"):
 		return _cache["street_lamp"]

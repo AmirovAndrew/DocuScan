@@ -6,7 +6,7 @@ render_mode blend_add, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 
 uniform vec3 cone_color : source_color = vec3(1.0, 0.7, 0.38);
 uniform float strength = 0.22;
-uniform float near_fade = 2.5;
+uniform float near_fade = 5.0;
 uniform float far_fade = 220.0;
 
 varying float depth01;

@@ -35,6 +35,11 @@ func _ready() -> void:
 	if args.has("screenshot"):
 		await _screenshot(args)
 	if args.has("autotest") or args.has("screenshot") or args.has("glowtest"):
+		# Stop audio and let the audio server release its playbacks before quitting.
+		main.ambience.queue_free()
+		main.footsteps.queue_free()
+		for i in 3:
+			await get_tree().process_frame
 		get_tree().quit(0)
 
 
@@ -83,6 +88,10 @@ func _autotest(args: Dictionary) -> void:
 		var span := step_times[-1] - step_times[0]
 		log_line("cadence %.2f steps/s" % ((step_times.size() - 1) / maxf(span, 0.001)))
 	log_line("physics frames during walk: %d, render fps now: %.0f" % [frames, Engine.get_frames_per_second()])
+	log_line("audio: %d footstep sounds played (one per stride), %d footprints in the snow, wind playing=%s" % [
+		main.footsteps.steps_played, main.footsteps.print_count(), main.ambience.is_playing()])
+	log_line("snowfall: %d flakes, emitting=%s, box centred %.1f m above the camera" % [
+		main.snowfall.amount, main.snowfall.emitting, main.snowfall.global_position.y - main.player.camera.global_position.y])
 	if main.light_pool:
 		log_line("real lamp lights active near the player: %d of %d" % [main.light_pool.active_count(), main.light_pool.count])
 
@@ -278,6 +287,9 @@ func _glow_test(args: Dictionary) -> void:
 
 func _screenshot(args: Dictionary) -> void:
 	var frames := int(args.get("frames", "90"))
+	if args.has("shot-pitch"):
+		main.player.set_view(main.player.rotation.y + deg_to_rad(float(args.get("shot-turn", "0"))),
+			deg_to_rad(float(args["shot-pitch"])))
 	for i in frames:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw

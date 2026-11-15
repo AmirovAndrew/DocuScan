@@ -8,6 +8,9 @@ const DebugRunner := preload("res://scripts/debug_runner.gd")
 const AtmosphereScript := preload("res://scripts/atmosphere.gd")
 const StreamerScript := preload("res://scripts/city/chunk_streamer.gd")
 const LightPoolScript := preload("res://scripts/city/lamp_light_pool.gd")
+const SnowfallScript := preload("res://scripts/fx/snowfall.gd")
+const FootstepsScript := preload("res://scripts/fx/footsteps.gd")
+const AmbienceScript := preload("res://scripts/fx/ambience.gd")
 const SNOW_SHADER := preload("res://shaders/snow_surface.gdshader")
 const NOISE_TEX := preload("res://textures/snow_noise.png")
 const NORMAL_TEX := preload("res://textures/snow_normal.png")
@@ -20,6 +23,9 @@ var atmosphere: Node3D
 var player: CharacterBody3D
 var streamer: Node3D
 var light_pool: Node3D
+var snowfall: GPUParticles3D
+var footsteps: Node3D
+var ambience: Node
 var touch_controls: Control
 var debug_label: Label
 var loading_overlay: ColorRect
@@ -39,10 +45,21 @@ func _ready() -> void:
 	add_child(player)
 
 	_build_ground()
+	footsteps = FootstepsScript.new()
+	footsteps.name = "Footsteps"
+	footsteps.player = player
+	add_child(footsteps)
+	ambience = AmbienceScript.new()
+	ambience.name = "Ambience"
+	add_child(ambience)
 	streamer = StreamerScript.new()
 	streamer.name = "City"
 	add_child(streamer)
 	has_city = streamer.load_manifest(String(args.get("data", DATA_DIR)))
+	snowfall = SnowfallScript.new()
+	snowfall.follow = player.camera
+	snowfall.streamer = streamer if has_city else null
+	add_child(snowfall)
 	_build_ui()
 	if has_city:
 		var sp: Dictionary = streamer.spawn_transform()

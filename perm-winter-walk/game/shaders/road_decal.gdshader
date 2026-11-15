@@ -6,6 +6,15 @@
 shader_type spatial;
 render_mode blend_mul, unshaded, depth_draw_never, cull_back, fog_disabled, shadows_disabled;
 
+// The Mobile renderer keeps its HDR colour buffer at half scale, and multiplicative
+// blending does not undo that: compensate, or every decal would also halve the
+// brightness of whatever it covers.
+#if CURRENT_RENDERER == RENDERER_MOBILE
+const float MUL_FIX = 2.0;
+#else
+const float MUL_FIX = 1.0;
+#endif
+
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float fade_start = 50.0;
 uniform float fade_end = 130.0;
@@ -40,5 +49,5 @@ void fragment() {
 	float dist = length(world_pos - CAMERA_POSITION_WORLD);
 	dark *= 1.0 - smoothstep(fade_start, fade_end, dist);
 	// Slightly bluish-grey shadowing reads as compressed, dirty snow.
-	ALBEDO = mix(vec3(1.0), vec3(0.42, 0.44, 0.5), clamp(dark, 0.0, 1.0));
+	ALBEDO = mix(vec3(1.0), vec3(0.42, 0.44, 0.5), clamp(dark, 0.0, 1.0)) * MUL_FIX;
 }

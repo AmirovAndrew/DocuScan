@@ -249,6 +249,8 @@ func _instantiate(key: String, d: Dictionary) -> void:
 	_add_multimesh(root, "BareTrees", Props.bare_tree_mesh(), d["tree_bare"], 230.0)
 	_add_multimesh(root, "Spruces", Props.spruce_mesh(), d["tree_spruce"], 260.0)
 
+	root.set_meta("light_tex", light_tex)
+	root.set_meta("light_rect", light_rect)
 	add_child(root)
 	chunks[key] = root
 	lamp_heads[key] = d["lamp_heads"]
@@ -296,6 +298,21 @@ func loaded_stats() -> Dictionary:
 	return {"chunks": chunks.size(), "pending": _pending.size(), "buildings": b, "lamps": lamps}
 
 
+func chunk_key_at(pos: Vector3) -> String:
+	return "%d,%d" % [floori(pos.x / chunk_size), floori(pos.z / chunk_size)]
+
+
+## [light map texture, light rect] of the loaded chunk under `pos`, or [] if none.
+func light_map_at(pos: Vector3) -> Array:
+	var key := chunk_key_at(pos)
+	if not chunks.has(key):
+		return []
+	var root: Node = chunks[key]
+	if root.get_meta("light_tex") == null:
+		return []
+	return [root.get_meta("light_tex"), root.get_meta("light_rect")]
+
+
 ## Lamp heads near a point (for the pool of real lights).
 func lamps_near(pos: Vector3, radius: float) -> PackedVector4Array:
 	var out := PackedVector4Array()
@@ -315,3 +332,4 @@ func _exit_tree() -> void:
 	for key: String in _pending:
 		WorkerThreadPool.wait_for_task_completion(_pending[key])
 	_pending.clear()
+	Props.clear_cache()
