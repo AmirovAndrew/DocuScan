@@ -92,6 +92,15 @@ func _autotest(args: Dictionary) -> void:
 		main.footsteps.steps_played, main.footsteps.print_count(), main.ambience.is_playing()])
 	log_line("snowfall: %d flakes, emitting=%s, box centred %.1f m above the camera" % [
 		main.snowfall.amount, main.snowfall.emitting, main.snowfall.global_position.y - main.player.camera.global_position.y])
+	if main.tree_lod:
+		main.tree_lod.update_now()
+		var sb = load("res://scripts/city/spruce_builder.gd")
+		var b0 = sb.new()
+		b0.make(0, 0, null)
+		var b1 = sb.new()
+		b1.make(1, 0, null)
+		log_line("spruces: %d detailed near the player; near mesh %d triangles, far mesh %d triangles" % [
+			main.tree_lod.near_count(), b0.triangle_count(), b1.triangle_count()])
 	if main.light_pool:
 		log_line("real lamp lights active near the player: %d of %d" % [main.light_pool.active_count(), main.light_pool.count])
 
@@ -292,6 +301,16 @@ func _glow_test(args: Dictionary) -> void:
 
 func _screenshot(args: Dictionary) -> void:
 	var frames := int(args.get("frames", "90"))
+	if args.has("debug-part"):
+		for key in main.streamer.chunks:
+			var b: MeshInstance3D = main.streamer.chunks[key].get_node_or_null("Buildings")
+			if b:
+				b.mesh.surface_get_material(0).set_shader_parameter("debug_part", int(args["debug-part"]))
+	if args.has("hide"):  # debug: hide nodes by name, e.g. --hide=NearSpruces0,Decals
+		for nm in String(args["hide"]).split(","):
+			for node in main.find_children(nm, "", true, false):
+				if node is Node3D:
+					node.visible = false
 	if args.has("shot-pitch"):
 		main.player.set_view(main.player.rotation.y + deg_to_rad(float(args.get("shot-turn", "0"))),
 			deg_to_rad(float(args["shot-pitch"])))

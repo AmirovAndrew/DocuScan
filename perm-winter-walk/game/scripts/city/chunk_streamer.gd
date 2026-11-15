@@ -18,6 +18,7 @@ const FACADE_SHADER := preload("res://shaders/facade.gdshader")
 const DECAL_SHADER := preload("res://shaders/road_decal.gdshader")
 const CONE_SHADER := preload("res://shaders/light_cone.gdshader")
 const NOISE_TEX := preload("res://textures/snow_noise.png")
+const SIGN_TEX := preload("res://textures/shop_signs.png")
 const NORMAL_TEX := preload("res://textures/snow_normal.png")
 
 const LAYER_DEFAULT := 1
@@ -82,6 +83,7 @@ func _make_materials() -> void:
 	var facade := ShaderMaterial.new()
 	facade.shader = FACADE_SHADER
 	facade.set_shader_parameter("noise_tex", NOISE_TEX)
+	facade.set_shader_parameter("sign_tex", SIGN_TEX)
 	_mats["facade"] = facade
 	var flat := ShaderMaterial.new()
 	flat.shader = SNOW_SHADER
@@ -257,7 +259,11 @@ func _instantiate(key: String, d: Dictionary) -> void:
 	if cones:
 		cones.material_override = _mats["cone"]
 	_add_multimesh(root, "BareTrees", Props.bare_tree_mesh(), d["tree_bare"], 230.0)
-	_add_multimesh(root, "Spruces", Props.spruce_mesh(), d["tree_spruce"], 260.0)
+	var spruces := _add_multimesh(root, "Spruces", Props.spruce_far_mesh(), d["tree_spruce"], 260.0)
+	if spruces:
+		# tree_lod.gd swaps the nearest of these for detailed trees.
+		root.set_meta("spruce_xforms", d["tree_spruce"])
+		root.set_meta("spruce_far_mm", spruces.multimesh)
 
 	root.set_meta("light_tex", light_tex)
 	root.set_meta("light_rect", light_rect)

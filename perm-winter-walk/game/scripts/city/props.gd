@@ -2,6 +2,15 @@ extends RefCounted
 ## Procedural low-poly meshes and shared materials for street furniture and trees.
 ## Built once and shared by every chunk through MultiMesh instancing.
 
+const SpruceBuilder := preload("res://scripts/city/spruce_builder.gd")
+const SPRUCE_SHADER := preload("res://shaders/spruce.gdshader")
+const NEEDLE_TEX := preload("res://textures/needles.png")
+const NEEDLE_NRM := preload("res://textures/needles_normal.png")
+const FRINGE_TEX := preload("res://textures/needle_fringe.png")
+const FRINGE_SHADER := preload("res://shaders/spruce_fringe.gdshader")
+const NOISE_TEX := preload("res://textures/snow_noise.png")
+const SPRUCE_VARIANTS := 2
+
 const LAMP_STREET_HEAD := Vector3(0.0, 6.95, -1.45)  # luminaire position in lamp space
 const LAMP_PARK_HEAD := Vector3(0.0, 3.95, 0.0)
 
@@ -96,24 +105,39 @@ static func bare_tree_mesh() -> ArrayMesh:
 	return mesh
 
 
-## Spruce with snow on the upper faces of its tiers.
-static func spruce_mesh() -> ArrayMesh:
-	if _cache.has("spruce"):
-		return _cache["spruce"]
-	var b := _Builder.new()
-	b.color = Color(0.07, 0.05, 0.04)
-	b.color_up = b.color
-	b.cylinder(Vector3.ZERO, 0.15, 0.1, 1.2, 5)
-	b.color = Color(0.03, 0.075, 0.05)
-	b.color_up = Color(0.7, 0.74, 0.8)
-	# [base height, tier height, radius]: narrow, steep tiers like a real Picea abies.
-	var tiers := [[0.7, 3.4, 2.1], [2.5, 3.0, 1.7], [4.2, 2.6, 1.3], [5.7, 2.2, 0.9], [7.0, 1.8, 0.5]]
-	for t: Array in tiers:
-		b.cone_solid(Vector3(0, t[0], 0), t[1], t[2], 8)
-	var mesh := ArrayMesh.new()
-	b.commit(mesh, tree_material())
-	_cache["spruce"] = mesh
-	return mesh
+## Detailed spruce for trees near the player (see tree_lod.gd), ~2.3k triangles.
+static func spruce_near_mesh(variant: int) -> ArrayMesh:
+	var key := "spruce_near_%d" % variant
+	if not _cache.has(key):
+		_cache[key] = SpruceBuilder.new().make(0, variant, spruce_material(), spruce_fringe_material())
+	return _cache[key]
+
+
+## Same tree with fewer, simpler branches for everything further away, ~300 triangles.
+static func spruce_far_mesh() -> ArrayMesh:
+	if not _cache.has("spruce_far"):
+		_cache["spruce_far"] = SpruceBuilder.new().make(1, 0, spruce_material())
+	return _cache["spruce_far"]
+
+
+static func spruce_fringe_material() -> ShaderMaterial:
+	if not _cache.has("spruce_fringe_mat"):
+		var m := ShaderMaterial.new()
+		m.shader = FRINGE_SHADER
+		m.set_shader_parameter("fringe_tex", FRINGE_TEX)
+		_cache["spruce_fringe_mat"] = m
+	return _cache["spruce_fringe_mat"]
+
+
+static func spruce_material() -> ShaderMaterial:
+	if not _cache.has("spruce_mat"):
+		var m := ShaderMaterial.new()
+		m.shader = SPRUCE_SHADER
+		m.set_shader_parameter("needle_tex", NEEDLE_TEX)
+		m.set_shader_parameter("needle_normal", NEEDLE_NRM)
+		m.set_shader_parameter("noise_tex", NOISE_TEX)
+		_cache["spruce_mat"] = m
+	return _cache["spruce_mat"]
 
 
 static func metal_material() -> StandardMaterial3D:

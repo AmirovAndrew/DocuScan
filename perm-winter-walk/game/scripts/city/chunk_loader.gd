@@ -6,25 +6,11 @@ extends RefCounted
 ## streamer creates the nodes from the returned Dictionary on the main thread.
 
 const Props := preload("res://scripts/city/props.gd")
+const BuildingBuilder := preload("res://scripts/city/building_builder.gd")
 
-const WALL_BOTTOM := -0.3
-const COLLISION_TOP := 6.0
-const CUSTOM0_FLAGS := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) \
-		| (Mesh.ARRAY_CUSTOM_R_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+const CUSTOM0_FLAGS := BuildingBuilder.CUSTOM_FLAGS
 
 enum { B_RESIDENTIAL, B_COMMERCIAL, B_PUBLIC, B_UTILITY, B_RELIGIOUS }
-
-## Facade colours seen in central Perm: Soviet panel greys and beiges, ochre and salmon
-## stucco, dark brick, a few pale green and blue-grey fronts.
-const PALETTE := {
-	B_RESIDENTIAL: [
-		Color(0.55, 0.5, 0.42), Color(0.48, 0.48, 0.5), Color(0.62, 0.54, 0.34), Color(0.42, 0.24, 0.18),
-		Color(0.66, 0.65, 0.62), Color(0.45, 0.5, 0.56), Color(0.6, 0.42, 0.34), Color(0.5, 0.57, 0.5)],
-	B_COMMERCIAL: [Color(0.3, 0.34, 0.4), Color(0.5, 0.5, 0.52), Color(0.42, 0.38, 0.35), Color(0.58, 0.55, 0.5)],
-	B_PUBLIC: [Color(0.68, 0.6, 0.42), Color(0.7, 0.68, 0.62), Color(0.55, 0.62, 0.6), Color(0.66, 0.5, 0.4)],
-	B_UTILITY: [Color(0.36, 0.36, 0.38), Color(0.4, 0.33, 0.28), Color(0.45, 0.45, 0.43)],
-	B_RELIGIOUS: [Color(0.82, 0.8, 0.74), Color(0.78, 0.72, 0.6)],
-}
 
 ## Snow-bank cross-section: (offset across in m, height in m).
 const BANK_PROFILE := [Vector2(-0.85, 0.0), Vector2(-0.45, 0.3), Vector2(0.0, 0.44), Vector2(0.45, 0.3), Vector2(0.85, 0.0)]
@@ -102,11 +88,6 @@ static func parse(b: PackedByteArray) -> Dictionary:
 	return d
 
 
-static func facade_color(kind: int, seed: float) -> Color:
-	var pal: Array = PALETTE.get(kind, PALETTE[B_RESIDENTIAL])
-	return pal[int(seed * 997.0) % pal.size()]
-
-
 static func _build_buildings(d: Dictionary) -> void:
 	if not d.has("b_count"):
 		return
@@ -115,92 +96,14 @@ static func _build_buildings(d: Dictionary) -> void:
 	var toff: PackedInt32Array = d["b_toff"]
 	var pts: PackedFloat32Array = d["b_pts"]
 	var tris: PackedInt32Array = d["b_tris"]
-	var wv := PackedVector3Array()
-	var wn := PackedVector3Array()
-	var wuv := PackedVector2Array()
-	var wuv2 := PackedVector2Array()
-	var wc := PackedColorArray()
-	var wcu := PackedFloat32Array()
-	var wseg := PackedFloat32Array()  # exact per-segment id for the window random state
-	var wi := PackedInt32Array()
-	var rv := PackedVector3Array()
-	var rn := PackedVector3Array()
-	var ri := PackedInt32Array()
-	var faces := PackedVector3Array()
+	var bb := BuildingBuilder.new()
 	for bi in int(d["b_count"]):
-		var h := attrs[bi * 8]
-		var levels := maxf(attrs[bi * 8 + 1], 1.0)
-		var kind := int(attrs[bi * 8 + 3])
-		var seed := attrs[bi * 8 + 4]
-		var landmark := attrs[bi * 8 + 5]
-		var lit := attrs[bi * 8 + 7]
-		var floor_h := clampf(h / levels, 2.6, 6.0)
-		var tint := facade_color(kind, seed)
-		var col := Color(tint.r, tint.g, tint.b, seed)
-		var kind_code := float(kind) + (8.0 if landmark > 0.5 else 0.0)
-		var p0 := poff[bi]
-		var p1 := poff[bi + 1]
-		var count := p1 - p0
-		var ctop := minf(h, COLLISION_TOP)
-		for k in count:
-			var j := p0 + k
-			var j2 := p0 + (k + 1) % count
-			var a := Vector2(pts[j * 2], pts[j * 2 + 1])
-			var b := Vector2(pts[j2 * 2], pts[j2 * 2 + 1])
-			var e := b - a
-			var seg := e.length()
-			if seg < 0.05:
-				continue
-			# Rings are counter-clockwise in (x, z): the outward normal is on the right.
-			var n := Vector3(e.y, 0.0, -e.x) / seg
-			var base := wv.size()
-			var a0 := Vector3(a.x, WALL_BOTTOM, a.y)
-			var b0 := Vector3(b.x, WALL_BOTTOM, b.y)
-			var b1 := Vector3(b.x, h, b.y)
-			var a1 := Vector3(a.x, h, a.y)
-			wv.append_array([a0, b0, b1, a1])
-			wn.append_array([n, n, n, n])
-			wuv.append_array([Vector2(0, WALL_BOTTOM), Vector2(seg, WALL_BOTTOM), Vector2(seg, h), Vector2(0, h)])
-			var shape := Vector2(levels, h)
-			wuv2.append_array([shape, shape, shape, shape])
-			wc.append_array([col, col, col, col])
-			var seg_id := float(wseg.size() / 4 % 4096)
-			for q in 4:
-				wcu.append_array([seg, floor_h, kind_code, lit])
-				wseg.append(seg_id)
-			wi.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
-			var ca := Vector3(a.x, 0.0, a.y)
-			var cb := Vector3(b.x, 0.0, b.y)
-			var cb1 := Vector3(b.x, ctop, b.y)
-			var ca1 := Vector3(a.x, ctop, a.y)
-			faces.append_array([ca, cb, cb1, ca, cb1, ca1])
-		var rbase := rv.size()
-		for k in count:
-			var j := p0 + k
-			rv.append(Vector3(pts[j * 2], h, pts[j * 2 + 1]))
-			rn.append(Vector3.UP)
-		for t in range(toff[bi], toff[bi + 1]):
-			ri.append(rbase + tris[t])
-	if wv.is_empty():
+		bb.add_building(pts, poff[bi], poff[bi + 1], tris, toff[bi], toff[bi + 1], attrs, bi)
+	if bb.v.is_empty():
 		return
-	var walls := []
-	walls.resize(Mesh.ARRAY_MAX)
-	walls[Mesh.ARRAY_VERTEX] = wv
-	walls[Mesh.ARRAY_NORMAL] = wn
-	walls[Mesh.ARRAY_TEX_UV] = wuv
-	walls[Mesh.ARRAY_TEX_UV2] = wuv2
-	walls[Mesh.ARRAY_COLOR] = wc
-	walls[Mesh.ARRAY_CUSTOM0] = wcu
-	walls[Mesh.ARRAY_CUSTOM1] = wseg
-	walls[Mesh.ARRAY_INDEX] = wi
-	d["wall_arrays"] = walls
-	var roofs := []
-	roofs.resize(Mesh.ARRAY_MAX)
-	roofs[Mesh.ARRAY_VERTEX] = rv
-	roofs[Mesh.ARRAY_NORMAL] = rn
-	roofs[Mesh.ARRAY_INDEX] = ri
-	d["roof_arrays"] = roofs
-	d["collision_faces"] = faces
+	d["wall_arrays"] = bb.wall_arrays()
+	d["roof_arrays"] = bb.roof_arrays()
+	d["collision_faces"] = bb.faces
 
 
 static func _build_flat(d: Dictionary) -> void:
@@ -358,10 +261,10 @@ static func _build_props(d: Dictionary) -> void:
 			var z := t[i * 4 + 1]
 			var s := t[i * 4 + 2]
 			var yaw := fmod(absf(x * 12.9898 + z * 78.233) * 43.7585, TAU)
-			var xf := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s)), Vector3(x, 0.0, z))
 			if t[i * 4 + 3] > 0.5:
-				spruce.append(xf)
+				var w := 0.85 + 0.3 * fmod(absf(x * 3.17 + z * 1.93), 1.0)  # slimmer or fuller crowns
+				spruce.append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(s * w, s, s * w)), Vector3(x, 0.0, z)))
 			else:
-				bare.append(xf)
+				bare.append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s)), Vector3(x, 0.0, z)))
 	d["tree_bare"] = bare
 	d["tree_spruce"] = spruce

@@ -8,6 +8,7 @@ const DebugRunner := preload("res://scripts/debug_runner.gd")
 const AtmosphereScript := preload("res://scripts/atmosphere.gd")
 const StreamerScript := preload("res://scripts/city/chunk_streamer.gd")
 const LightPoolScript := preload("res://scripts/city/lamp_light_pool.gd")
+const TreeLodScript := preload("res://scripts/city/tree_lod.gd")
 const SnowfallScript := preload("res://scripts/fx/snowfall.gd")
 const FootstepsScript := preload("res://scripts/fx/footsteps.gd")
 const AmbienceScript := preload("res://scripts/fx/ambience.gd")
@@ -23,6 +24,7 @@ var atmosphere: Node3D
 var player: CharacterBody3D
 var streamer: Node3D
 var light_pool: Node3D
+var tree_lod: Node3D
 var snowfall: GPUParticles3D
 var footsteps: Node3D
 var ambience: Node
@@ -70,6 +72,11 @@ func _ready() -> void:
 		light_pool.streamer = streamer
 		light_pool.target = player
 		add_child(light_pool)
+		tree_lod = TreeLodScript.new()
+		tree_lod.name = "TreeLOD"
+		tree_lod.streamer = streamer
+		tree_lod.target = player
+		add_child(tree_lod)
 		streamer.initial_load_done.connect(_on_city_ready, CONNECT_ONE_SHOT)
 		streamer.begin_initial_load(player.global_position)
 	else:
@@ -118,7 +125,7 @@ func _on_city_ready() -> void:
 
 ## "You are on the Esplanade; the Opera is straight ahead" for a few seconds.
 func _show_start_caption() -> void:
-	if not has_city:
+	if not has_city or args.has("pos") or args.has("yaw"):
 		return
 	var lines: PackedStringArray = ["Эспланада · Пермь"]
 	for lm: Dictionary in streamer.manifest.get("landmarks", []):

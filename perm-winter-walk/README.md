@@ -7,8 +7,10 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
 
 | | |
 |---|---|
-| ![Street at night](docs/street.jpg) | ![Lit windows](docs/facades.jpg) |
-| ![Opera and Ballet Theatre, floodlit](docs/opera.jpg) | ![From above](docs/aerial.jpg) |
+| ![Soviet panel block: loggias, entrances, lit rooms](docs/panel.jpg) | ![Shops with signs](docs/shops.jpg) |
+| ![Historic stucco: surrounds, cornices](docs/historic.jpg) | ![Brick house, rooms behind the windows](docs/brick.jpg) |
+| ![Opera and Ballet Theatre, floodlit](docs/opera.jpg) | ![Snowy Norway spruce](docs/spruce.jpg) |
+| ![Street at night](docs/street.jpg) | ![From above](docs/aerial.jpg) |
 | ![Spawn on the Esplanade](docs/spawn.jpg) | ![Touch controls](docs/touch.jpg) |
 
 *Screenshots are real frames from the game (Mobile renderer, software Vulkan in the build sandbox).*
@@ -20,9 +22,26 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
   squares and the frozen Kama, streamed in 250 m chunks.
 * **Night and winter**: cold blue ambient light, weak moonlight, light depth fog,
   a city-glow sky, snow on roofs, snow banks along kerbs, tyre ruts on the roads.
-* **Windows** glow warm yellow from a facade shader: each window is on or off, has its
-  own warmth and brightness, a few flicker (TVs, tired bulbs). There are shop fronts on
-  the ground floor, and landmarks (the Opera) are floodlit. Emissive, with glow/bloom.
+* **Buildings with architecture**: each building gets a style from its OSM type and
+  height: Soviet panel block, historic stucco, brick (red or white silicate), modern
+  glass, utility, church.
+  * **Geometry:** parapets, plinths, two-tier cornices, belt courses, balconies and glazed
+    loggias (aligned with the window grid), entrance canopies, all with snow on top.
+  * **Painted in the shader:** panel seams, brickwork, rustication, window surrounds
+    with small cornices, pilasters on public buildings, dirt streaks under sills, road
+    splash at the foot of walls.
+* **Windows** glow warm yellow and look three-dimensional:
+  * They sit in recesses (parallax) with snowy sills, and frames are white PVC or old wood.
+  * Behind lit windows there is a room (interior mapping): wallpaper, floor, ceiling, a
+    sofa or wardrobe, a ceiling lamp, seen through curtains or tulle.
+  * Each window is on or off with its own warmth; a few flicker (TVs, tired bulbs).
+  * Shops have big windows onto lit shelves and glowing signs (generic words, no brands);
+    block entrances have a steel door and a lamp.
+  * Landmarks (the Opera) are floodlit. Emissive, with glow/bloom.
+* **Spruces**: procedural Norway spruces with whorls of drooping branches that turn
+  up at the tips, needle texture, hanging twig fringes and clumps of snow. Near the
+  player they use a detailed mesh (~4.5k triangles, two shapes); further away a
+  simplified one with the same silhouette.
 * **Street lamps**: OSM `highway=street_lamp` nodes plus generated ones along streets and
   park paths (≈1,900 in the area). Each has an emissive bulb, a warm light cone and a
   pool of light on the snow. Only 6 real lights are used, following the lamps nearest
@@ -46,10 +65,12 @@ perm-winter-walk/
     scripts/player.gd        first-person controller, stride-based footfalls
     scripts/touch_controls.gd   multi-touch joystick / look / run
     scripts/atmosphere.gd    sky, ambient, moon, fog, glow
-    scripts/city/            chunk_streamer.gd, chunk_loader.gd, props.gd, lamp_light_pool.gd
+    scripts/city/            chunk_streamer.gd, chunk_loader.gd, building_builder.gd,
+                             spruce_builder.gd, tree_lod.gd, props.gd, lamp_light_pool.gd
     scripts/fx/              snowfall.gd, footsteps.gd, ambience.gd
     scripts/debug_runner.gd  command-line tests and screenshots
-    shaders/                 facade, snow_surface, road_decal, light_cone, snowfall, footprint, sky
+    shaders/                 facade, spruce, spruce_fringe, snow_surface, road_decal, light_cone,
+                             snowfall, snowflake, footprint, night_sky
     data/perm/               generated map chunks + manifest.json (format: data/FORMAT.md)
     audio/, textures/        generated CC0 assets
     export_presets.cfg       Android (arm64) and Linux presets
@@ -209,24 +230,34 @@ What the project does for mobile:
   below 60 fps.
 * **Merged meshes**: per chunk, one mesh for all flat surfaces (and snow banks), one
   for all walls, one for all roofs, one decal mesh; lamps and trees are MultiMesh
-  instances. Measured with the F3 overlay: **36–42 draw calls and 90–170k triangles**
-  in typical views (the tree-filled Theatre Garden is the high end), snow included.
-* **No window geometry**: windows, shop fronts and floodlighting are computed in the
-  facade shader, with a distance fade so far facades don't shimmer.
+  instances. Balconies, cornices and the like are part of the wall mesh (one material),
+  so they add triangles but no draw calls. Measured with the F3 overlay: **32–42 draw
+  calls and 100–250k triangles** in typical views (dense spruces and panel blocks with
+  balconies are the high end), snow included.
+* **No window geometry**: windows, rooms, shop fronts, signs and floodlighting are
+  computed in the facade shader. Rooms and window recesses are only computed closer
+  than `detail_distance` (32 m), and far away the window grid collapses to its average
+  glow, so distant facades are cheap and don't shimmer.
+* **Spruce LOD**: every chunk draws its spruces with a ~800-triangle mesh in one
+  MultiMesh. `tree_lod.gd` swaps the up to 48 spruces nearest to you (within 45 m) for
+  the detailed mesh, drawn in one shared MultiMesh per shape. That costs 2–4 extra draw
+  calls in total.
 * **Light is faked wherever possible**: lamp pools and window spill on the snow are
   baked offline into a 128×128 light map per chunk, from neighbouring chunks too, so
   there are no seams. The snow, snow banks and lower facades sample it. Only **6 real
   SpotLights** exist; they move to the lamps nearest you and fade between assignments,
   and are masked off the ground so it is never lit twice. There are no real-time shadows.
 * **Streaming work off the main thread**: parsing and mesh building run on the
-  WorkerThreadPool (≈4 ms per chunk on a desktop core); main-thread instantiation is
-  ≈1 ms on average, 4 ms worst case, at most one chunk per frame.
+  WorkerThreadPool (≈14 ms per chunk on a desktop core, now that buildings are
+  detailed). Main-thread instantiation is ≈2 ms on average, 7 ms worst case, at most
+  one chunk per frame; at walking speed a new chunk arrives every few minutes.
 * Fog plus a 460 m far plane; visibility ranges on trees, lamps, cones and decals.
 * Static sky (radiance map rendered once), 2,400 snow particles, 6 lights, no shadows.
 
-Knobs if a phone struggles: `rendering/scaling_3d/scale.mobile` (e.g. 0.65), particle
-`amount` in `scripts/fx/snowfall.gd`, `count` in `lamp_light_pool.gd`, `load_radius` in
-`chunk_streamer.gd`, MSAA in Project Settings.
+Knobs if a phone struggles: `rendering/scaling_3d/scale.mobile` (e.g. 0.65),
+`detail_distance` in `shaders/facade.gdshader`, `max_near` / `near_radius` in
+`tree_lod.gd`, particle `amount` in `scripts/fx/snowfall.gd`, `count` in
+`lamp_light_pool.gd`, `load_radius` in `chunk_streamer.gd`, MSAA in Project Settings.
 
 ## Testing
 
@@ -246,7 +277,11 @@ godot -- --glowtest=/tmp/glow.png        # measures that bloom actually changes 
 ```
 
 Other debug options: `--pos=X,Z --yaw=DEG --pitch=DEG`, `--cam-height=M` (look from
-above), `--debug` (overlay on), `--touch`, `--data=res://data/<folder>`.
+above), `--debug` (overlay on), `--touch`, `--data=res://data/<folder>`,
+`--hide=NodeName,...` (hide nodes), `--debug-part=N` (draw only one facade part:
+0 wall, 1 trim, 2 plinth, 3 balcony, 4 loggia glass, 5 canopy). `--pos` does not check
+for buildings: a camera placed inside one sees its walls from behind (culled) and its
+cornice undersides floating in the air.
 
 ## What was verified, and what was not
 
@@ -260,6 +295,10 @@ Verified in the sandbox, by running things rather than only compiling them:
 * Spawn: on the Esplanade, 0.0° off the direction of the Opera Theatre.
 * Real frames from the Mobile renderer (software Vulkan): screenshots above. Bloom
   measurably changes the frame; window flicker shows up as a frame-to-frame difference.
+* Spruces and facades: the autotest reports the detailed spruces swapped in near the
+  player and both meshes' triangle counts. A geometry scan of all 80 chunks found no
+  stray wall vertices and no trim outside its building. Facades were checked in
+  screenshots of every style from street level.
 * The preprocessor tests pass for Overpass JSON (live and saved), `.osm.pbf` (written and
   read back with pyosmium) and GeoJSON input. They check levels, the default of 3,
   triangle winding, exact tiling of each chunk, river holes and OSM lamps.
