@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="20" fill="#0b1426"/>
+  <rect x="14" y="58" width="22" height="52" fill="#1c2b47"/>
+  <rect x="40" y="40" width="30" height="70" fill="#22355a"/>
+  <rect x="74" y="66" width="20" height="44" fill="#1c2b47"/>
+  <rect x="98" y="50" width="18" height="60" fill="#22355a"/>
+  <g fill="#ffcf6b">
+    <rect x="19" y="66" width="5" height="6"/><rect x="27" y="80" width="5" height="6"/>
+    <rect x="45" y="48" width="6" height="7"/><rect x="58" y="62" width="6" height="7"/>
+    <rect x="45" y="76" width="6" height="7"/><rect x="79" y="74" width="5" height="6"/>
+    <rect x="103" y="58" width="5" height="6"/><rect x="103" y="84" width="5" height="6"/>
+  </g>
+  <rect x="0" y="106" width="128" height="22" fill="#e8eef8"/>
+  <g fill="#ffffff">
+    <circle cx="20" cy="24" r="2.5"/><circle cx="52" cy="14" r="2"/><circle cx="88" cy="28" r="2.5"/>
+    <circle cx="110" cy="16" r="2"/><circle cx="70" cy="34" r="1.5"/><circle cx="34" cy="40" r="1.5"/>
+  </g>
+</svg>
