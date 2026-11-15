@@ -30,9 +30,11 @@ func _ready() -> void:
 			await _building_collision_test()
 		if args.has("streamtest"):
 			await _stream_test()
+	if args.has("glowtest"):
+		await _glow_test(args)
 	if args.has("screenshot"):
 		await _screenshot(args)
-	if args.has("autotest") or args.has("screenshot"):
+	if args.has("autotest") or args.has("screenshot") or args.has("glowtest"):
 		get_tree().quit(0)
 
 
@@ -81,6 +83,8 @@ func _autotest(args: Dictionary) -> void:
 		var span := step_times[-1] - step_times[0]
 		log_line("cadence %.2f steps/s" % ((step_times.size() - 1) / maxf(span, 0.001)))
 	log_line("physics frames during walk: %d, render fps now: %.0f" % [frames, Engine.get_frames_per_second()])
+	if main.light_pool:
+		log_line("real lamp lights active near the player: %d of %d" % [main.light_pool.active_count(), main.light_pool.count])
 
 	# Turn around and walk back: exercises the look API used by touch / mouse.
 	player.add_look(PI, 0.0)
@@ -236,6 +240,40 @@ func _stream_test() -> void:
 	var removed := before.filter(func(k): return not after.has(k)).size()
 	log_line("streaming: moved to %s; chunk %s loaded=%s after %d ms; +%d / -%d chunks, %d resident" % [
 		_v(target), key, streamer.chunks.has(key), Time.get_ticks_msec() - t0, added, removed, after.size()])
+
+
+## Renders the current view with glow off and on and compares brightness around
+## emissive things, to prove the bloom pass actually runs on this renderer.
+func _glow_test(args: Dictionary) -> void:
+	for i in 60:
+		await get_tree().process_frame
+	var env: Environment = main.atmosphere.environment
+	var base_intensity := env.glow_intensity
+	var out := String(args.get("glowtest"))
+	var results := {}
+	for mode: Array in [["off", false, 0.0], ["on", true, base_intensity], ["x4", true, base_intensity * 4.0]]:
+		env.glow_enabled = mode[1]
+		env.glow_intensity = mode[2]
+		for i in 8:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var img := get_viewport().get_texture().get_image()
+		if img == null or img.is_empty():
+			log_line("glow test needs a real renderer")
+			return
+		if out != "true":
+			img.save_png(out.get_basename() + "_" + mode[0] + ".png")
+		var sum := 0.0
+		for y in range(0, img.get_height(), 4):
+			for x in range(0, img.get_width(), 4):
+				sum += img.get_pixel(x, y).get_luminance()
+		results[mode[0]] = sum / float((img.get_height() / 4) * (img.get_width() / 4))
+	env.glow_enabled = true
+	env.glow_intensity = base_intensity
+	log_line("glow (msaa %d): mean luminance off %.4f, on %.4f, x4 %.4f" % [get_viewport().msaa_3d, results["off"], results["on"], results["x4"]])
+	if args.has("glow-nomsaa") and get_viewport().msaa_3d != Viewport.MSAA_DISABLED:
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		await _glow_test(args)
 
 
 func _screenshot(args: Dictionary) -> void:

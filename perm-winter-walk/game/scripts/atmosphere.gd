@@ -27,8 +27,8 @@ func _ready() -> void:
 
 	# Cold blue ambient. Using a flat colour (not the sky) keeps it predictable.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.36, 0.46, 0.72)
-	env.ambient_light_energy = 0.32
+	env.ambient_light_color = Color(0.45, 0.52, 0.7)
+	env.ambient_light_energy = 0.3
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
@@ -39,9 +39,9 @@ func _ready() -> void:
 	# matches the sky's horizon so silhouettes melt into it.
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
-	env.fog_light_color = Color(0.11, 0.115, 0.16)
+	env.fog_light_color = Color(0.12, 0.12, 0.155)
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.0065
+	env.fog_density = 0.008
 	env.fog_sky_affect = 0.35
 	env.fog_height = 30.0
 	env.fog_height_density = 0.0
@@ -49,12 +49,12 @@ func _ready() -> void:
 
 	# Bloom so lit windows and lamps halo in the snowy air.
 	env.glow_enabled = true
-	env.glow_intensity = 0.9
+	env.glow_intensity = 0.8
 	env.glow_strength = 1.0
-	env.glow_bloom = 0.02
-	env.glow_hdr_threshold = 0.9
+	env.glow_bloom = 0.0
+	env.glow_hdr_threshold = 0.6
 	env.glow_hdr_scale = 2.0
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
 	for i in 7:
 		env.set_glow_level(i, 0.0)
 	env.set_glow_level(1, 0.6)
@@ -63,7 +63,7 @@ func _ready() -> void:
 	env.set_glow_level(4, 0.4)
 
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.05
+	env.adjustment_saturation = 0.9
 	env.adjustment_contrast = 1.05
 
 	environment = env

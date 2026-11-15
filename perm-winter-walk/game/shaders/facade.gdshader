@@ -5,6 +5,7 @@
 //   UV2     = (levels, wall height)
 //   COLOR   = (facade tint rgb, building seed)
 //   CUSTOM0 = (segment length, floor height, kind (+8 if landmark), share of windows lit)
+//   CUSTOM1 = (segment id, unique within the chunk)
 //
 // Each window gets its own random state from (segment, column, floor, building seed):
 // lit or dark, colour temperature, brightness, and a small share flicker (TVs, tired
@@ -16,11 +17,12 @@ uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_e
 uniform sampler2D light_map : hint_default_black, filter_linear, repeat_disable;
 uniform vec4 light_rect = vec4(0.0, 0.0, 0.004, 0.004);
 uniform float light_strength = 2.4;
-uniform float window_emission = 1.6;
+uniform float window_emission = 2.0;
 uniform float flicker_share = 0.05;
-uniform float landmark_flood = 0.9;
+uniform float landmark_flood = 0.75;
 
 varying vec4 bdata;
+varying float seg_uid;
 varying vec2 bshape;
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -39,6 +41,7 @@ float hash12(vec2 p) {
 
 void vertex() {
 	bdata = CUSTOM0;
+	seg_uid = CUSTOM1.x;
 	bshape = UV2;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
@@ -90,9 +93,9 @@ void fragment() {
 	vec2 inside = smoothstep(wmin - aa, wmin + aa, cell) * (1.0 - smoothstep(wmax - aa, wmax + aa, cell));
 	float win = in_grid ? inside.x * inside.y : 0.0;
 
-	// Per-window random state; NORMAL and length keep different segments different.
-	vec2 seg_id = vec2(floor(seg_len * 7.31) + floor(world_normal.x * 9.0) * 31.0,
-	                   floor(world_normal.z * 9.0) + seed * 113.0);
+	// Per-window random state from exact per-vertex ids (never from interpolated values,
+	// which would flip from pixel to pixel at rounding boundaries).
+	vec2 seg_id = vec2(floor(seg_uid + 0.5), floor(seed * 4093.0));
 	vec2 wid = vec2(col, row) + seg_id * 17.0;
 	float r_on = hash12(wid);
 	float r_col = hash12(wid + 3.7);
@@ -104,14 +107,22 @@ void fragment() {
 	if (r_col > 0.55) lamp_col = vec3(1.0, 0.8, 0.52);
 	if (r_col > 0.86) lamp_col = vec3(0.95, 0.5, 0.22);        // orange curtains
 	if (r_col > 0.95) lamp_col = vec3(0.7, 0.82, 1.0);         // cold fluorescent / TV
-	if (ground_shop) lamp_col = mix(vec3(1.0, 0.85, 0.65), vec3(0.85, 0.92, 1.0), step(0.6, r_col));
+	if (ground_shop) lamp_col = mix(vec3(1.0, 0.78, 0.5), vec3(0.8, 0.88, 1.0), step(0.65, r_col));
 	float intensity = (0.55 + 0.6 * r_int) * window_emission;
+	if (ground_shop) intensity *= 0.45 + 0.25 * r_int;  // shop glass is big: keep it from washing out
 
 	// Curtains and frames: darker edges, a mullion and a transom.
 	vec2 lp = (cell - wmin) / (wmax - wmin);
 	float curtain = 0.55 + 0.45 * smoothstep(0.0, 0.3, lp.x) * smoothstep(1.0, 0.7, lp.x);
-	float frame = ground_shop ? 1.0 : (1.0 - 0.85 * smoothstep(0.035, 0.015, abs(lp.x - 0.5)))
-	                                  * (1.0 - 0.85 * smoothstep(0.03, 0.01, abs(lp.y - 0.68)));
+	float frame = (1.0 - 0.85 * smoothstep(0.035, 0.015, abs(lp.x - 0.5)))
+	              * (1.0 - 0.85 * smoothstep(0.03, 0.01, abs(lp.y - 0.68)));
+	if (ground_shop) {
+		// Shop window: mullions every ~1.3 m, brighter at the top (ceiling lights), shelves.
+		float mull = 1.0 - 0.8 * smoothstep(0.03, 0.01, abs(fract(lp.x * 2.0) - 0.5) - 0.47);
+		float shelves = 0.75 + 0.25 * step(0.5, fract(lp.y * 5.0 + r_int));
+		frame = mull * shelves * (0.6 + 0.4 * lp.y);
+		curtain = 1.0;
+	}
 	intensity *= curtain * frame;
 
 	// A few windows flicker slightly (TV glow or a tired bulb).
@@ -144,7 +155,11 @@ void fragment() {
 
 	vec3 flood = vec3(0.0);
 	if (landmark || kind == B_RELIGIOUS) {
-		flood = wall * vec3(1.0, 0.86, 0.66) * landmark_flood * (0.45 + 0.55 * (1.0 - v / max(wall_h, 1.0)));
+		// Floodlights at the foot of the facade: bright low down, fading upwards, with
+		// pilaster-like light and shade every ~3.5 m to suggest a classical front.
+		float up = clamp(v / max(wall_h, 1.0), 0.0, 1.0);
+		float pilaster = 0.7 + 0.3 * smoothstep(0.35, 0.5, abs(fract(u / 3.5) - 0.5) * 2.0);
+		flood = wall * vec3(1.0, 0.84, 0.6) * landmark_flood * pilaster * (0.15 + 0.85 * pow(1.0 - up, 1.8));
 	}
 	EMISSION = emit + ALBEDO * lamp * 0.8 + flood;
 }

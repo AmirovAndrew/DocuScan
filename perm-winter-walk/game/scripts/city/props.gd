@@ -124,12 +124,14 @@ static func metal_material() -> StandardMaterial3D:
 
 static func bulb_material() -> StandardMaterial3D:
 	if not _cache.has("bulb_mat"):
+		# Shaded with a black albedo so only the emission shows; unshaded materials
+		# ignore emission and would never get bright enough to bloom.
 		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.albedo_color = Color(1.0, 0.78, 0.5)
+		m.albedo_color = Color(0.0, 0.0, 0.0)
+		m.roughness = 1.0
 		m.emission_enabled = true
-		m.emission = Color(1.0, 0.72, 0.42)
-		m.emission_energy_multiplier = 2.2
+		m.emission = Color(1.0, 0.74, 0.45)
+		m.emission_energy_multiplier = 6.0
 		_cache["bulb_mat"] = m
 	return _cache["bulb_mat"]
 

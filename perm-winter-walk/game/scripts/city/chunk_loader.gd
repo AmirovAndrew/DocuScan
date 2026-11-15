@@ -9,7 +9,8 @@ const Props := preload("res://scripts/city/props.gd")
 
 const WALL_BOTTOM := -0.3
 const COLLISION_TOP := 6.0
-const CUSTOM0_FLAGS := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+const CUSTOM0_FLAGS := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) \
+		| (Mesh.ARRAY_CUSTOM_R_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 
 enum { B_RESIDENTIAL, B_COMMERCIAL, B_PUBLIC, B_UTILITY, B_RELIGIOUS }
 
@@ -120,6 +121,7 @@ static func _build_buildings(d: Dictionary) -> void:
 	var wuv2 := PackedVector2Array()
 	var wc := PackedColorArray()
 	var wcu := PackedFloat32Array()
+	var wseg := PackedFloat32Array()  # exact per-segment id for the window random state
 	var wi := PackedInt32Array()
 	var rv := PackedVector3Array()
 	var rn := PackedVector3Array()
@@ -162,8 +164,10 @@ static func _build_buildings(d: Dictionary) -> void:
 			var shape := Vector2(levels, h)
 			wuv2.append_array([shape, shape, shape, shape])
 			wc.append_array([col, col, col, col])
+			var seg_id := float(wseg.size() / 4 % 4096)
 			for q in 4:
 				wcu.append_array([seg, floor_h, kind_code, lit])
+				wseg.append(seg_id)
 			wi.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 			var ca := Vector3(a.x, 0.0, a.y)
 			var cb := Vector3(b.x, 0.0, b.y)
@@ -187,6 +191,7 @@ static func _build_buildings(d: Dictionary) -> void:
 	walls[Mesh.ARRAY_TEX_UV2] = wuv2
 	walls[Mesh.ARRAY_COLOR] = wc
 	walls[Mesh.ARRAY_CUSTOM0] = wcu
+	walls[Mesh.ARRAY_CUSTOM1] = wseg
 	walls[Mesh.ARRAY_INDEX] = wi
 	d["wall_arrays"] = walls
 	var roofs := []

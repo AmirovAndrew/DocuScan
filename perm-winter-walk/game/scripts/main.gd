@@ -7,6 +7,7 @@ const InputSetup := preload("res://scripts/input_setup.gd")
 const DebugRunner := preload("res://scripts/debug_runner.gd")
 const AtmosphereScript := preload("res://scripts/atmosphere.gd")
 const StreamerScript := preload("res://scripts/city/chunk_streamer.gd")
+const LightPoolScript := preload("res://scripts/city/lamp_light_pool.gd")
 const SNOW_SHADER := preload("res://shaders/snow_surface.gdshader")
 const NOISE_TEX := preload("res://textures/snow_noise.png")
 const NORMAL_TEX := preload("res://textures/snow_normal.png")
@@ -18,6 +19,7 @@ var args: Dictionary = {}
 var atmosphere: Node3D
 var player: CharacterBody3D
 var streamer: Node3D
+var light_pool: Node3D
 var touch_controls: Control
 var debug_label: Label
 var loading_overlay: ColorRect
@@ -46,6 +48,11 @@ func _ready() -> void:
 		var sp: Dictionary = streamer.spawn_transform()
 		_place_player(sp["position"], sp["yaw"])
 		streamer.target = player
+		light_pool = LightPoolScript.new()
+		light_pool.name = "LampLights"
+		light_pool.streamer = streamer
+		light_pool.target = player
+		add_child(light_pool)
 		streamer.initial_load_done.connect(_on_city_ready, CONNECT_ONE_SHOT)
 		streamer.begin_initial_load(player.global_position)
 	else:
@@ -53,7 +60,7 @@ func _ready() -> void:
 		_place_player(Vector3(0, 0.1, 0), 0.0)
 		_on_city_ready()
 
-	if args.has("autotest") or args.has("screenshot"):
+	if args.has("autotest") or args.has("screenshot") or args.has("glowtest"):
 		var runner := DebugRunner.new()
 		runner.name = "DebugRunner"
 		runner.main = self
