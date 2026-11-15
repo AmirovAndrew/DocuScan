@@ -25,7 +25,7 @@ const LAYER_FLAT := 2   ## ground-level surfaces: lit by the baked light map, no
 
 @export var load_radius := 400.0
 @export var unload_radius := 520.0
-@export var max_instantiations_per_frame := 2
+@export var max_instantiations_per_frame := 1  # each costs ~1-4 ms on desktop, more on a phone
 
 var target: Node3D
 var data_dir := ""
@@ -42,6 +42,7 @@ var _mutex := Mutex.new()
 var _check_timer := 0.0
 var _initial_keys := {}
 var _mats := {}
+var timing := {"build_ms_max": 0.0, "build_ms_sum": 0.0, "inst_ms_max": 0.0, "inst_ms_sum": 0.0, "count": 0}
 
 
 func load_manifest(dir: String) -> bool:
@@ -150,7 +151,9 @@ func _start(key: String) -> void:
 
 
 func _work(key: String, path: String) -> void:
+	var t0 := Time.get_ticks_usec()
 	var d := Loader.load_and_build(path)
+	d["build_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	_mutex.lock()
 	_results[key] = d
 	_mutex.unlock()
@@ -174,7 +177,14 @@ func _collect_results() -> void:
 		if d.has("error"):
 			push_error("chunk %s: %s" % [key, d["error"]])
 		elif still_wanted or not initial_done:
+			var t0 := Time.get_ticks_usec()
 			_instantiate(key, d)
+			var inst_ms := (Time.get_ticks_usec() - t0) / 1000.0
+			timing["inst_ms_max"] = maxf(timing["inst_ms_max"], inst_ms)
+			timing["inst_ms_sum"] += inst_ms
+			timing["build_ms_max"] = maxf(timing["build_ms_max"], float(d.get("build_ms", 0.0)))
+			timing["build_ms_sum"] += float(d.get("build_ms", 0.0))
+			timing["count"] += 1
 			budget -= 1
 		if _initial_keys.erase(key) and _initial_keys.is_empty():
 			_finish_initial()

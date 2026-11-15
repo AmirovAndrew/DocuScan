@@ -140,6 +140,23 @@ def test_overpass_path(tmp_path=None):
     check_dataset(res)
 
 
+def test_saved_overpass_json(tmp_path=None):
+    tmp = Path(tmp_path or tempfile.mkdtemp())
+    p = tmp / "saved.json"
+    p.write_text(json.dumps(overpass_fixture()))
+    check_dataset(run_pipeline(["--source", "overpass", "--overpass-json", str(p)], tmp / "out"))
+
+
+def test_print_query(capsys=None):
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert pp.main(["--print-query", "--out", tempfile.mkdtemp()]) == 0
+    q = buf.getvalue()
+    assert q.count("[out:json]") == 1 and 'node["highway"="street_lamp"]' in q
+
+
 def test_geojson_path(tmp_path=None):
     tmp = Path(tmp_path or tempfile.mkdtemp())
     feats = pp.feats_from_overpass(overpass_fixture())

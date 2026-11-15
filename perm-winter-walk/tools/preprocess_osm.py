@@ -182,27 +182,27 @@ def classify(tags: dict, geom) -> str | None:
 
 # ----------------------------------------------------------------------------- sources
 def overpass_query(bbox) -> str:
-    s, w, n, e = bbox[1], bbox[0], bbox[3], bbox[2]
-    bb = f"({s},{w},{n},{e})"
-    return f"""[out:json][timeout:240];
+    """Overpass QL for everything the game uses inside bbox (min_lon, min_lat, max_lon, max_lat)."""
+    s, w, n, e = (round(v, 6) for v in (bbox[1], bbox[0], bbox[3], bbox[2]))
+    return f"""[out:json][timeout:240][bbox:{s},{w},{n},{e}];
 (
-  way["building"]{bb};
-  relation["building"]["type"="multipolygon"]{bb};
-  way["highway"]{bb};
-  way["area:highway"]{bb};
-  way["landuse"]{bb};
-  relation["landuse"]["type"="multipolygon"]{bb};
-  way["leisure"]{bb};
-  relation["leisure"]["type"="multipolygon"]{bb};
-  way["natural"~"^(water|wood|scrub|grassland|heath|wetland)$"]{bb};
-  relation["natural"~"^(water|wood|scrub)$"]["type"="multipolygon"]{bb};
-  way["waterway"="riverbank"]{bb};
-  relation["waterway"="riverbank"]{bb};
-  way["place"="square"]{bb};
-  relation["place"="square"]{bb};
-  way["amenity"="parking"]{bb};
-  node["highway"="street_lamp"]{bb};
-  node["natural"="tree"]{bb};
+  way["building"];
+  relation["building"]["type"="multipolygon"];
+  way["highway"];
+  way["area:highway"];
+  way["landuse"];
+  relation["landuse"]["type"="multipolygon"];
+  way["leisure"];
+  relation["leisure"]["type"="multipolygon"];
+  way["natural"~"^(water|wood|scrub|grassland|heath|wetland)$"];
+  relation["natural"~"^(water|wood|scrub)$"]["type"="multipolygon"];
+  way["waterway"="riverbank"];
+  relation["waterway"="riverbank"];
+  way["place"="square"];
+  relation["place"="square"];
+  way["amenity"="parking"];
+  node["highway"="street_lamp"];
+  node["natural"="tree"];
 );
 out body geom;
 """
@@ -989,6 +989,10 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--merge", action="store_true", help="add chunks to an existing dataset in --out")
     ap.add_argument("--overpass-endpoint", default=None)
+    ap.add_argument("--overpass-json", type=Path,
+                    help="with --source overpass: read a saved Overpass JSON response instead of querying")
+    ap.add_argument("--print-query", action="store_true",
+                    help="print the Overpass QL query for the area (e.g. for overpass-turbo.eu) and exit")
     ap.add_argument("--cache", type=Path, default=Path(__file__).parent / "cache")
     ap.add_argument("--name", default="Perm city centre")
     args = ap.parse_args(argv)
@@ -1021,7 +1025,13 @@ def main(argv=None) -> int:
     print(f"origin {lat0:.6f},{lon0:.6f}; {len(chunk_ids)} chunks of {size:.0f} m "
           f"(x {cx0}..{cx1}, z {cz0}..{cz1}); fetch bbox {','.join(f'{v:.5f}' for v in fetch_bbox)}")
 
-    if args.source == "overpass":
+    if args.print_query:
+        print(overpass_query(fetch_bbox))
+        return 0
+    if args.source == "overpass" and args.overpass_json:
+        feats = feats_from_overpass(json.loads(args.overpass_json.read_text()))
+        source_note = f"OpenStreetMap via Overpass API (saved response {args.overpass_json.name})"
+    elif args.source == "overpass":
         feats = feats_from_overpass(fetch_overpass(fetch_bbox, args.overpass_endpoint, args.cache))
         source_note = "OpenStreetMap via Overpass API"
     elif args.source == "pbf":

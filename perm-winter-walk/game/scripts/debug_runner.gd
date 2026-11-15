@@ -238,6 +238,7 @@ func _stream_test() -> void:
 	if target.x > b.end.x - 10.0:
 		target.x = player.global_position.x - 600.0
 	player.global_position = target
+	player.reset_physics_interpolation()
 	var t0 := Time.get_ticks_msec()
 	var key := "%d,%d" % [floori(target.x / streamer.chunk_size), floori(target.z / streamer.chunk_size)]
 	while Time.get_ticks_msec() - t0 < 8000:
@@ -249,6 +250,10 @@ func _stream_test() -> void:
 	var removed := before.filter(func(k): return not after.has(k)).size()
 	log_line("streaming: moved to %s; chunk %s loaded=%s after %d ms; +%d / -%d chunks, %d resident" % [
 		_v(target), key, streamer.chunks.has(key), Time.get_ticks_msec() - t0, added, removed, after.size()])
+	var tm: Dictionary = streamer.timing
+	var n := maxi(int(tm["count"]), 1)
+	log_line("chunk cost over %d chunks: worker build avg %.1f ms (max %.1f), main-thread instantiate avg %.1f ms (max %.1f)" % [
+		tm["count"], tm["build_ms_sum"] / n, tm["build_ms_max"], tm["inst_ms_sum"] / n, tm["inst_ms_max"]])
 
 
 ## Renders the current view with glow off and on and compares brightness around

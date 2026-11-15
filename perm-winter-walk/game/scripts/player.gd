@@ -55,7 +55,7 @@ func _init() -> void:
 	camera.name = "Camera"
 	camera.fov = 72.0
 	camera.near = 0.05
-	camera.far = 520.0
+	camera.far = 460.0  # fog hides everything beyond ~400 m
 	camera.current = true
 	head.add_child(camera)
 
@@ -69,6 +69,7 @@ func set_view(yaw: float, pitch: float) -> void:
 	rotation = Vector3(0.0, yaw, 0.0)
 	_pitch = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 	head.rotation.x = _pitch
+	reset_physics_interpolation()
 
 
 func add_look(yaw_delta: float, pitch_delta: float) -> void:

@@ -38,6 +38,7 @@ pointing/emulate_mouse_from_touch=false
 3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=60
 common/max_physics_steps_per_frame=4
+common/physics_interpolation=true
 
 [rendering]
 
@@ -49,3 +50,4 @@ environment/defaults/default_clear_color=Color(0.02, 0.03, 0.06, 1)
 lights_and_shadows/directional_shadow/size=1024
 lights_and_shadows/positional_shadow/atlas_size=1024
 shading/overrides/force_vertex_shading=false
+scaling_3d/scale.mobile=0.8

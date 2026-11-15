@@ -113,6 +113,36 @@ func _on_city_ready() -> void:
 		var tw := create_tween()
 		tw.tween_property(loading_overlay, "modulate:a", 0.0, 0.8)
 		tw.tween_callback(loading_overlay.hide)
+	_show_start_caption()
+
+
+## "You are on the Esplanade; the Opera is straight ahead" for a few seconds.
+func _show_start_caption() -> void:
+	if not has_city:
+		return
+	var lines: PackedStringArray = ["Эспланада · Пермь"]
+	for lm: Dictionary in streamer.manifest.get("landmarks", []):
+		var n := String(lm.get("name", ""))
+		if "опер" in n.to_lower():
+			var d := Vector2(float(lm["x"]) - player.global_position.x, float(lm["z"]) - player.global_position.z).length()
+			lines.append("Театр оперы и балета — %.1f км прямо по курсу" % (d / 1000.0))
+	var cap := Label.new()
+	cap.name = "StartCaption"
+	cap.text = "\n".join(lines)
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_font_size_override("font_size", 24)
+	cap.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	cap.add_theme_constant_override("shadow_offset_y", 2)
+	var vp := get_viewport().get_visible_rect().size
+	cap.size = Vector2(vp.x, 80)
+	cap.position = Vector2(0, vp.y * 0.18)
+	cap.modulate.a = 0.0
+	debug_label.get_parent().add_child(cap)
+	var tw := create_tween()
+	tw.tween_property(cap, "modulate:a", 1.0, 1.2).set_delay(0.6)
+	tw.tween_interval(4.5)
+	tw.tween_property(cap, "modulate:a", 0.0, 1.5)
+	tw.tween_callback(cap.queue_free)
 
 
 func make_snow_material() -> ShaderMaterial:
