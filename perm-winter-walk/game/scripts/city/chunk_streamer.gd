@@ -17,6 +17,8 @@ const SNOW_SHADER := preload("res://shaders/snow_surface.gdshader")
 const FACADE_SHADER := preload("res://shaders/facade.gdshader")
 const DECAL_SHADER := preload("res://shaders/road_decal.gdshader")
 const CONE_SHADER := preload("res://shaders/light_cone.gdshader")
+const LANDMARK_SHADER := preload("res://shaders/landmark.gdshader")
+const LANDMARK_BUILDERS := {"opera": preload("res://scripts/city/landmarks/opera_builder.gd")}
 const NOISE_TEX := preload("res://textures/snow_noise.png")
 const SIGN_TEX := preload("res://textures/shop_signs.png")
 const NORMAL_TEX := preload("res://textures/snow_normal.png")
@@ -103,6 +105,10 @@ func _make_materials() -> void:
 	var cone := ShaderMaterial.new()
 	cone.shader = CONE_SHADER
 	_mats["cone"] = cone
+	var lmat := ShaderMaterial.new()
+	lmat.shader = LANDMARK_SHADER
+	lmat.set_shader_parameter("noise_tex", NOISE_TEX)
+	_mats["landmark"] = lmat
 
 
 func flat_material() -> ShaderMaterial:
@@ -155,6 +161,14 @@ func _start(key: String) -> void:
 func _work(key: String, path: String) -> void:
 	var t0 := Time.get_ticks_usec()
 	var d := Loader.load_and_build(path)
+	# Landmarks with their own model (e.g. the Opera Theatre) whose centre is in this chunk.
+	var models: Array = []
+	var rect := _chunk_rect(key)
+	for lm: Dictionary in manifest.get("landmarks", []):
+		var builder: Variant = LANDMARK_BUILDERS.get(String(lm.get("model", "")))
+		if builder != null and rect.has_point(Vector2(float(lm["x"]), float(lm["z"]))):
+			models.append(builder.new().build(lm))
+	d["landmark_models"] = models
 	d["build_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	_mutex.lock()
 	_results[key] = d
@@ -252,6 +266,18 @@ func _instantiate(key: String, d: Dictionary) -> void:
 		mi.layers = LAYER_FLAT
 		mi.visibility_range_end = 150.0
 		root.add_child(mi)
+
+	for m: Dictionary in d.get("landmark_models", []):
+		var lm_mesh := ArrayMesh.new()
+		lm_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, m["arrays"])
+		var lmat: ShaderMaterial = _mats["landmark"].duplicate()
+		lmat.set_shader_parameter("light_map", light_tex)
+		lmat.set_shader_parameter("light_rect", light_rect)
+		lmat.set_shader_parameter("front_dir", m["front"])
+		var lmi := _mesh_instance("Landmark", lm_mesh, lmat)
+		lmi.transform = m["transform"]
+		lmi.set_meta("triangles", m["triangles"])
+		root.add_child(lmi)
 
 	_add_multimesh(root, "StreetLamps", Props.street_lamp_mesh(), d["lamp_street"], 320.0)
 	_add_multimesh(root, "ParkLamps", Props.park_lamp_mesh(), d["lamp_park"], 220.0)

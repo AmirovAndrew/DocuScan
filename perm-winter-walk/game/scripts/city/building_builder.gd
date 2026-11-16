@@ -114,6 +114,15 @@ func add_building(pts: PackedFloat32Array, p0: int, p1: int, tris: PackedInt32Ar
 	var kind := int(attrs[bi * 8 + 3])
 	var seed := attrs[bi * 8 + 4]
 	var landmark := attrs[bi * 8 + 5] > 0.5
+	if attrs[bi * 8 + 5] > 1.5:
+		# Drawn by its own model (scripts/city/landmarks): only the walls' collision here.
+		var ctop := minf(h, COLLISION_TOP)
+		for k in p1 - p0:
+			var a := Vector3(pts[(p0 + k) * 2], 0.0, pts[(p0 + k) * 2 + 1])
+			var j := p0 + (k + 1) % (p1 - p0)
+			var b := Vector3(pts[j * 2], 0.0, pts[j * 2 + 1])
+			faces.append_array([a, b, b + Vector3(0, ctop, 0), a, b + Vector3(0, ctop, 0), a + Vector3(0, ctop, 0)])
+		return
 	_lit = attrs[bi * 8 + 7]
 	_style = style_for(kind, levels, seed, landmark)
 	_floor_h = clampf(h / levels, 2.6, 6.0)

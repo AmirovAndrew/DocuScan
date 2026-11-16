@@ -42,6 +42,7 @@ from shapely import wkb
 BUCKET = "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com"
 THEMES = {
     "building": "theme=buildings/type=building",
+    "building_part": "theme=buildings/type=building_part",
     "segment": "theme=transportation/type=segment",
     "water": "theme=base/type=water",
     "land_use": "theme=base/type=land_use",
@@ -164,7 +165,8 @@ def read_rows(key: str, size: int, rgs: list[int], bbox) -> list[dict]:
     wanted = [c for c in (
         "id", "geometry", "bbox", "sources", "names", "class", "subtype", "height", "num_floors",
         "min_height", "min_floor", "roof_shape", "facade_color", "is_underground", "level",
-        "subclass", "road_flags", "width", "road_surface") if c in names]
+        "subclass", "road_flags", "width", "road_surface", "roof_height", "roof_direction",
+        "roof_orientation", "building_id") if c in names]
     rows = []
     for rg in rgs:
         tbl = pf.read_row_group(rg, columns=wanted)
@@ -219,6 +221,20 @@ def to_features(kind: str, rows: list[dict]) -> list[dict]:
                 tags["min_height"] = f"{rec['min_height']:.2f}"
             if rec.get("facade_color"):
                 tags["building:colour"] = rec["facade_color"]
+        elif kind == "building_part":
+            # OSM building:part: the 3D massing of a building (heights, roof shapes).
+            tags["building:part"] = "yes"
+            for key, tag in (("height", "height"), ("min_height", "min_height"), ("roof_height", "roof:height")):
+                if rec.get(key) is not None:
+                    tags[tag] = f"{rec[key]:.2f}"
+            if rec.get("num_floors") is not None:
+                tags["building:levels"] = str(rec["num_floors"])
+            if rec.get("roof_shape"):
+                tags["roof:shape"] = rec["roof_shape"]
+            if rec.get("roof_direction") is not None:
+                tags["roof:direction"] = f"{rec['roof_direction']:.1f}"
+            if rec.get("roof_orientation"):
+                tags["roof:orientation"] = rec["roof_orientation"]
         elif kind == "segment":
             if sub != "road":
                 continue  # rail / water segments

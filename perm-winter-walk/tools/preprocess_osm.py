@@ -132,8 +132,8 @@ def is_area_tags(tags: dict) -> bool:
         return False
     if tags.get("area") == "yes":
         return True
-    return any(k in tags for k in ("building", "landuse", "leisure", "amenity", "place", "area:highway",
-                                   "water")) or tags.get("natural") in (
+    return any(k in tags for k in ("building", "building:part", "landuse", "leisure", "amenity", "place",
+                                   "area:highway", "water")) or tags.get("natural") in (
         "water", "wood", "scrub", "grassland", "heath", "wetland") or tags.get("waterway") == "riverbank"
 
 
@@ -150,6 +150,8 @@ def classify(tags: dict, geom) -> str | None:
             return "tree"
         return None
     b = tags.get("building")
+    if poly and tags.get("building:part") not in (None, "no") and not b:
+        return "part"  # 3D massing of a building; used for landmarks with their own model
     if poly and b and b not in SKIP_BUILDINGS and tags.get("location") != "underground":
         return "building"
     if line and hw:
@@ -187,6 +189,8 @@ def overpass_query(bbox) -> str:
     return f"""[out:json][timeout:240][bbox:{s},{w},{n},{e}];
 (
   way["building"];
+  way["building:part"];
+  relation["building:part"]["type"="multipolygon"];
   relation["building"]["type"="multipolygon"];
   way["highway"];
   way["area:highway"];
@@ -303,7 +307,7 @@ def feats_from_pbf(path: Path, bbox) -> list[Feat]:
     from shapely import wkb
     fab = osmium.geom.WKBFactory()
     env = box(*bbox).buffer(0.002)
-    keys = ("building", "highway", "landuse", "leisure", "natural", "waterway", "place", "amenity",
+    keys = ("building", "building:part", "highway", "landuse", "leisure", "natural", "waterway", "place", "amenity",
             "area:highway", "water")
     fp = osmium.FileProcessor(str(path)).with_locations().with_areas() \
         .with_filter(osmium.filter.KeyFilter(*keys))
@@ -686,6 +690,7 @@ class World:
         self.path_tree = STRtree(self.path_polys) if self.path_polys else None
         self.bld_polys = [p for f in by.get("building", []) for p in polygons_of(f.geom)]
         self.bld_tree = STRtree(self.bld_polys) if self.bld_polys else None
+        self.custom_models: set[str] = set()  # osm ids of buildings drawn by a landmark model
 
     def query(self, kind: str, geom) -> list[Feat]:
         if kind not in self.trees:
@@ -729,6 +734,8 @@ def build_chunk(world: World, cx: int, cz: int, size: float, stats: dict, keep_c
             height, levels, kind = building_params(f.tags, outer.area)
             name = f.tags.get("name", "").lower()
             landmark = 1.0 if any(k in name for k in LANDMARK_NAMES) else 0.0
+            if f.osm_id in world.custom_models:
+                landmark = 2.0  # drawn by a dedicated model (landmarks in the manifest); walls only collide
             v, t = triangulate(outer)
             if len(t) == 0:
                 continue
@@ -922,6 +929,71 @@ def build_chunk(world: World, cx: int, cz: int, size: float, stats: dict, keep_c
     return w, lamps, light_buildings
 
 
+def landmark_model(world: World, feat: Feat, model: str) -> dict:
+    """Local frame, footprint and OSM building:parts of a landmark with its own 3D model.
+
+    Frame: u across the building, v from the main facade (v = 0) to the back; the main
+    facade is the side through which a building part sticks out (a portico), else the
+    side facing the spawn. Godot: model basis = (u, up, v), origin = facade centre."""
+    fp = max(polygons_of(feat.geom), key=lambda g: g.area)
+    fp = orient(Polygon(fp.exterior).simplify(0.25, preserve_topology=True), sign=1.0)
+    rect = fp.minimum_rotated_rectangle
+    rc = np.asarray(rect.exterior.coords)[:4]
+    e1, e2 = rc[1] - rc[0], rc[2] - rc[1]
+    long_e = e1 if np.hypot(*e1) >= np.hypot(*e2) else e2
+    v = long_e / np.hypot(*long_e)
+    centre = np.asarray(rect.centroid.coords[0])
+    parts = [p for p in world.by.get("part", []) if p.geom.intersection(fp).area > 0.5 * p.geom.area]
+    # Where is the main facade? 1) a portico in the footprint leaves notches in its bounding
+    # rectangle either side of it; 2) else a building part sticking out of the footprint;
+    # 3) else the side facing the spawn point.
+    front_hint = None
+    notches = rect.difference(fp)
+    if notches.area > 0.015 * rect.area:
+        front_hint = np.asarray(notches.centroid.coords[0])
+    if front_hint is None and parts:
+        outside = unary_union([p.geom for p in parts]).difference(fp.buffer(0.3))
+        if not outside.is_empty and outside.area > 0.01 * fp.area:
+            front_hint = np.asarray(outside.centroid.coords[0])
+    if front_hint is None and "spawn_xz" in world.__dict__:
+        front_hint = np.asarray(world.spawn_xz)
+    if front_hint is not None:
+        # v runs along the rectangle axis that points at the facade (the portico)...
+        d = front_hint - centre
+        other = np.array([-v[1], v[0]])
+        if abs(np.dot(d, other)) > abs(np.dot(d, v)):
+            v = other
+        if np.dot(d, v) > 0:
+            v = -v  # ...from the facade to the back
+    u = np.array([v[1], -v[0]])  # (u, up, v) is right-handed
+    proj_u = (rc - centre) @ u
+    proj_v = (rc - centre) @ v
+    width, length = float(proj_u.max() - proj_u.min()), float(proj_v.max() - proj_v.min())
+    origin = centre + v * float(proj_v.min())
+
+    def local(geom):
+        pts = np.asarray(geom.exterior.coords)[:-1] - origin
+        return [[round(float(q @ u), 2), round(float(q @ v), 2)] for q in pts]
+
+    out_parts = []
+    for p in parts:
+        for g in polygons_of(p.geom):
+            out_parts.append({
+                "pts": local(orient(g, sign=1.0)),
+                "height": parse_number(p.tags.get("height")),
+                "min_height": parse_number(p.tags.get("min_height")) or 0.0,
+                "roof": p.tags.get("roof:shape", "flat"),
+                "roof_height": parse_number(p.tags.get("roof:height")),
+                "osm_id": p.osm_id,
+            })
+    print(f"landmark model '{model}': {width:.1f} x {length:.1f} m, {len(out_parts)} OSM building parts")
+    return {"model": model, "frame": {"origin": [round(float(origin[0]), 3), round(float(origin[1]), 3)],
+                                      "u": [round(float(u[0]), 6), round(float(u[1]), 6)],
+                                      "v": [round(float(v[0]), 6), round(float(v[1]), 6)],
+                                      "width": round(width, 2), "length": round(length, 2)},
+            "footprint": local(fp), "parts": out_parts}
+
+
 def find_spawn(world: World, feats_named: dict) -> tuple[dict, list[dict]]:
     """Spawn on the Esplanade, facing the Opera Theatre, with the longest clear view."""
     landmarks = []
@@ -1064,6 +1136,13 @@ def main(argv=None) -> int:
         spawn, landmarks = old["spawn"], old.get("landmarks", [])
     else:
         spawn, landmarks = find_spawn(world, named)
+    if "opera" in named:
+        world.custom_models.add(named["opera"].osm_id)
+        world.spawn_xz = (spawn["x"], spawn["z"])
+        model = landmark_model(world, named["opera"], "opera")
+        for lm in landmarks:
+            if lm.get("osm_id") == named["opera"].osm_id:
+                lm.update(model)
     # Keep the first view open: no trees or generated lamps right at the spawn point.
     spawn_clear = Point(spawn["x"], spawn["z"]).buffer(9.0)
     chunk_index = dict(old["chunks"]) if old else {}

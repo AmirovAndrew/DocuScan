@@ -48,6 +48,9 @@ def overpass_fixture() -> dict:
         way(5, [ll(0, -200), ll(0, 100)], {"highway": "footway"}),
         way(6, square(-60, 60, 30), {"leisure": "park", "name": "Эспланада"}),
         way(7, square(70, -80, 12), {"building": "theatre", "name": "Пермский театр оперы и балета"}),
+        # OSM building:parts of the "opera": a taller hall standing 2 m out of the front (south) side
+        way(8, [ll(64, -94), ll(76, -94), ll(76, -80), ll(64, -80), ll(64, -94)],
+            {"building:part": "yes", "height": "23", "roof:shape": "gabled"}),
         {"type": "relation", "id": 9, "tags": {"type": "multipolygon", "natural": "water", "water": "river"},
          "members": [
              {"type": "way", "ref": 91, "role": "outer", "geometry": [{"lon": x, "lat": y} for x, y in river_outer[:3]]},
@@ -113,6 +116,16 @@ def check_dataset(res: dict) -> None:
     assert (lamps[:, 3] == 0.0).sum() >= 4    # and generated lamps line the primary road
     assert all("LMAP" in c or True for c in chunks)
     assert man["spawn"]["yaw_deg"] != 0.0     # faces the "opera" from the "Esplanade"
+    # the opera gets its own landmark model: frame, footprint and OSM building:parts
+    lm = [x for x in man["landmarks"] if x.get("model") == "opera"]
+    assert len(lm) == 1, man["landmarks"]
+    fr = lm[0]["frame"]
+    assert abs(fr["width"] - 24.0) < 0.6 and abs(fr["length"] - 24.0) < 0.6, fr
+    assert len(lm[0]["parts"]) == 1 and lm[0]["parts"][0]["height"] == 23.0
+    # the part sticks out to the south (-y in OSM = +z): the facade must face that way
+    assert fr["v"][1] < -0.9, fr
+    landmark_flags = sorted(np.concatenate([c["BLDG"]["attrs"] for c in chunks if "BLDG" in c])[:, 5].tolist())
+    assert landmark_flags[-1] == 2.0  # walls of the opera only collide; the model draws it
 
 
 def test_overpass_path(tmp_path=None):

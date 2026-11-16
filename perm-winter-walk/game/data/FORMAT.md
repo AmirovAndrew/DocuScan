@@ -22,7 +22,7 @@ Chunks are squares of `chunk_size` metres (250). Chunk `(cx, cz)` covers
 | `bounds` | `[min_x, min_z, max_x, max_z]` covered by chunks |
 | `chunks` | `{"cx,cz": "chunk_cx_cz.bin"}` |
 | `spawn` | `{x, z, yaw_deg}`: on the Esplanade, facing the Opera Theatre |
-| `landmarks` | `[{name, x, z, osm_id}]` |
+| `landmarks` | `[{name, x, z, osm_id}]`, plus for a landmark with its own 3D model: `model` (e.g. `"opera"`), `frame` `{origin [x, z], u [x, z], v [x, z], width, length}` (u across, v from the main facade to the back), `footprint` `[[u, v], ...]` and `parts` `[{pts [[u, v], ...], height, min_height, roof, roof_height, osm_id}]` from OSM `building:part` |
 | `attribution`, `license`, `source`, `generated`, `stats` | provenance |
 
 Adding an area later (`--merge`) appends to `chunks` and grows `bounds`; the origin and
@@ -48,6 +48,8 @@ section  char[4] tag    | u32 payload_bytes | payload
 | `LMAP` | `u32 res, u32 png_bytes`, PNG: baked warm light on the snow, RGB = sqrt(light / 2) |
 
 Building attrs: `height m, levels, min_height, kind, seed, landmark, footprint m², lit share`.
+`landmark`: 0 normal, 1 floodlit landmark, 2 drawn by its own model (the chunk keeps its walls
+for collision only).
 Building kinds: 0 residential, 1 commercial, 2 public, 3 utility, 4 religious.
 Surface kinds: 0 snow, 1 park, 2 square, 3 road, 4 footpath, 5 frozen river, 6 paved.
 

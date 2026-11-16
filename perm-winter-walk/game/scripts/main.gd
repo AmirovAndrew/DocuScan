@@ -294,6 +294,8 @@ func autotest_report(runner: Node) -> void:
 		return
 	var st: Dictionary = streamer.loaded_stats()
 	runner.log_line("city: %d chunks loaded, %d buildings, %d lamps" % [st["chunks"], st["buildings"], st["lamps"]])
+	for lmi in streamer.find_children("Landmark", "MeshInstance3D", true, false):
+		runner.log_line("landmark model %s: %d triangles" % [lmi.get_parent().name, int(lmi.get_meta("triangles", 0))])
 	for lm: Dictionary in streamer.manifest.get("landmarks", []):
 		var to := Vector3(float(lm["x"]), 0, float(lm["z"])) - player.global_position
 		to.y = 0

@@ -9,7 +9,8 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
 |---|---|
 | ![Soviet panel block: loggias, entrances, lit rooms](docs/panel.jpg) | ![Shops with signs](docs/shops.jpg) |
 | ![Historic stucco: surrounds, cornices](docs/historic.jpg) | ![Brick house, rooms behind the windows](docs/brick.jpg) |
-| ![Opera and Ballet Theatre, floodlit](docs/opera.jpg) | ![Snowy Norway spruce](docs/spruce.jpg) |
+| ![Opera and Ballet Theatre from the Theatre Garden](docs/opera.jpg) | ![Opera: colonnade, pediment, arched doors](docs/opera_close.jpg) |
+| ![Snowy Norway spruce](docs/spruce.jpg) | |
 | ![Street at night](docs/street.jpg) | ![From above](docs/aerial.jpg) |
 | ![Spawn on the Esplanade](docs/spawn.jpg) | ![Touch controls](docs/touch.jpg) |
 
@@ -38,6 +39,16 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
   * Shops have big windows onto lit shelves and glowing signs (generic words, no brands);
     block entrances have a steel door and a lamp.
   * Landmarks (the Opera) are floodlit. Emissive, with glow/bloom.
+* **The Opera and Ballet Theatre** has its own model (~17k triangles, one draw call):
+  * **Massing** comes from the three OSM `building:part`s mapped for it: an 18 m main body
+    with a hipped roof, the 23 m auditorium whose gabled end forms the pediment of the
+    main facade, and the 26 m stage house. It is fitted to the real footprint, facing the
+    Theatre Garden.
+  * **Main facade:** a rusticated ground floor with five arched doors and steps, a loggia
+    with six columns and a balustrade, entablature with dentils, and a pediment with a
+    relief of the State Emblem of the USSR.
+  * **Other facades:** window openings with reveals, surrounds, sills and sandriks, giant
+    pilasters, cornices and snowy roofs. Everything is floodlit at night.
 * **Spruces**: procedural Norway spruces with whorls of drooping branches that turn
   up at the tips, needle texture, hanging twig fringes and clumps of snow. Near the
   player they use a detailed mesh (~4.5k triangles, two shapes); further away a
@@ -67,9 +78,10 @@ perm-winter-walk/
     scripts/atmosphere.gd    sky, ambient, moon, fog, glow
     scripts/city/            chunk_streamer.gd, chunk_loader.gd, building_builder.gd,
                              spruce_builder.gd, tree_lod.gd, props.gd, lamp_light_pool.gd
+    scripts/city/landmarks/  opera_builder.gd (the Opera Theatre model), mesh_kit.gd
     scripts/fx/              snowfall.gd, footsteps.gd, ambience.gd
     scripts/debug_runner.gd  command-line tests and screenshots
-    shaders/                 facade, spruce, spruce_fringe, snow_surface, road_decal, light_cone,
+    shaders/                 facade, landmark, spruce, spruce_fringe, snow_surface, road_decal, light_cone,
                              snowfall, snowflake, footprint, night_sky
     data/perm/               generated map chunks + manifest.json (format: data/FORMAT.md)
     audio/, textures/        generated CC0 assets
