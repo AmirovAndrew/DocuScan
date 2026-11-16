@@ -18,7 +18,11 @@ const FACADE_SHADER := preload("res://shaders/facade.gdshader")
 const DECAL_SHADER := preload("res://shaders/road_decal.gdshader")
 const CONE_SHADER := preload("res://shaders/light_cone.gdshader")
 const LANDMARK_SHADER := preload("res://shaders/landmark.gdshader")
-const LANDMARK_BUILDERS := {"opera": preload("res://scripts/city/landmarks/opera_builder.gd")}
+const LANDMARK_BUILDERS := {
+	"opera": preload("res://scripts/city/landmarks/opera_builder.gd"),
+	"teatr": preload("res://scripts/city/landmarks/teatr_builder.gd"),
+	"soviets": preload("res://scripts/city/landmarks/soviets_builder.gd"),
+}
 const NOISE_TEX := preload("res://textures/snow_noise.png")
 const SIGN_TEX := preload("res://textures/shop_signs.png")
 const NORMAL_TEX := preload("res://textures/snow_normal.png")
@@ -278,6 +282,34 @@ func _instantiate(key: String, d: Dictionary) -> void:
 		lmi.transform = m["transform"]
 		lmi.set_meta("triangles", m["triangles"])
 		root.add_child(lmi)
+		# Steps (as walkable ramps), terraces, parapets, fountain basins.
+		var colliders: Array = m.get("colliders", [])
+		if not colliders.is_empty():
+			var body := StaticBody3D.new()
+			body.name = "LandmarkCollision"
+			body.transform = m["transform"]
+			for c: Dictionary in colliders:
+				var cs := CollisionShape3D.new()
+				match String(c["type"]):
+					"box":
+						var bs := BoxShape3D.new()
+						var mn: Vector3 = c["min"]
+						var mx: Vector3 = c["max"]
+						bs.size = mx - mn
+						cs.shape = bs
+						cs.position = (mn + mx) * 0.5
+					"convex":
+						var cv := ConvexPolygonShape3D.new()
+						cv.points = c["points"]
+						cs.shape = cv
+					"cylinder":
+						var cy := CylinderShape3D.new()
+						cy.radius = c["radius"]
+						cy.height = c["height"]
+						cs.shape = cy
+						cs.position = (c["centre"] as Vector3) + Vector3(0, float(c["height"]) * 0.5, 0)
+				body.add_child(cs)
+			root.add_child(body)
 
 	_add_multimesh(root, "StreetLamps", Props.street_lamp_mesh(), d["lamp_street"], 320.0)
 	_add_multimesh(root, "ParkLamps", Props.park_lamp_mesh(), d["lamp_park"], 220.0)

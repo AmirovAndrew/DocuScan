@@ -19,6 +19,14 @@ The game shows this attribution on screen at all times.
 * Street lamps, trees and snow banks that OSM does not map are *generated*
   procedurally from the OSM road and park geometry.
 
+## Landmark models
+
+The Opera and Ballet Theatre, Teatr-Teatr and the House of Soviets are modelled in code
+(`game/scripts/city/landmarks/`). Their size, footprint and building parts come from the
+OSM data above. The architectural details follow public text descriptions of the
+buildings, such as the Russian Wikipedia articles and the theatre's own site. No
+photographs, drawings or third-party 3D models were copied.
+
 ## Sounds: generated, CC0 1.0
 
 All sounds were synthesised from scratch by `tools/make_sounds.py` (numpy/scipy, no

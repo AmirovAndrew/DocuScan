@@ -22,7 +22,7 @@ Chunks are squares of `chunk_size` metres (250). Chunk `(cx, cz)` covers
 | `bounds` | `[min_x, min_z, max_x, max_z]` covered by chunks |
 | `chunks` | `{"cx,cz": "chunk_cx_cz.bin"}` |
 | `spawn` | `{x, z, yaw_deg}`: on the Esplanade, facing the Opera Theatre |
-| `landmarks` | `[{name, x, z, osm_id}]`, plus for a landmark with its own 3D model: `model` (e.g. `"opera"`), `frame` `{origin [x, z], u [x, z], v [x, z], width, length}` (u across, v from the main facade to the back), `footprint` `[[u, v], ...]` and `parts` `[{pts [[u, v], ...], height, min_height, roof, roof_height, osm_id}]` from OSM `building:part` |
+| `landmarks` | `[{name, x, z, osm_id}]`, plus for a landmark with its own 3D model: `model` (`"opera"`, `"teatr"` or `"soviets"`), `frame` `{origin [x, z], u [x, z], v [x, z], width, length}` (u across, v from the main facade to the back), `footprint` `[[u, v], ...]` and `parts` `[{pts [[u, v], ...], height, min_height, roof, roof_height, osm_id}]` from OSM `building:part` |
 | `attribution`, `license`, `source`, `generated`, `stats` | provenance |
 
 Adding an area later (`--merge`) appends to `chunks` and grows `bounds`; the origin and

@@ -62,7 +62,7 @@ func build(lm: Dictionary) -> Dictionary:
 	var u: Array = fr.get("u", [1.0, 0.0])
 	var vv: Array = fr.get("v", [0.0, 1.0])
 	var basis := Basis(Vector3(u[0], 0, u[1]), Vector3.UP, Vector3(vv[0], 0, vv[1]))
-	return {"arrays": k.arrays(), "transform": Transform3D(basis, Vector3(o[0], 0, o[1])),
+	return {"arrays": k.arrays(), "colliders": k.colliders, "transform": Transform3D(basis, Vector3(o[0], 0, o[1])),
 			"front": -Vector3(vv[0], 0, vv[1]), "triangles": k.tri_count()}
 
 
@@ -311,6 +311,7 @@ func _steps(pc: float, pw: float) -> void:
 	for i in n:
 		var z0 := -2.6 + 0.65 * i
 		k.box(Vector3(pc - pw * 0.5 - 0.9, 0.0, z0), Vector3(pc + pw * 0.5 + 0.9, 0.18 * (i + 1), 0.05), ["y-", "z+"])
+	k.collide_ramp(pc - pw * 0.5 - 0.9, pc + pw * 0.5 + 0.9, -2.6, 0.0, 0.0, 0.72)
 
 
 func _portico(pc: float, pw: float, pd: float, eave: float, hall_h: float) -> void:

@@ -10,6 +10,7 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
 | ![Soviet panel block: loggias, entrances, lit rooms](docs/panel.jpg) | ![Shops with signs](docs/shops.jpg) |
 | ![Historic stucco: surrounds, cornices](docs/historic.jpg) | ![Brick house, rooms behind the windows](docs/brick.jpg) |
 | ![Opera and Ballet Theatre from the Theatre Garden](docs/opera.jpg) | ![Opera: colonnade, pediment, arched doors](docs/opera_close.jpg) |
+| ![Teatr-Teatr: marble arcade, glazed foyer, copper lanterns](docs/teatr.jpg) | ![House of Soviets: ribbon windows, loggia, RSFSR emblem, flag](docs/soviets.jpg) |
 | ![Snowy Norway spruce](docs/spruce.jpg) | |
 | ![Street at night](docs/street.jpg) | ![From above](docs/aerial.jpg) |
 | ![Spawn on the Esplanade](docs/spawn.jpg) | ![Touch controls](docs/touch.jpg) |
@@ -38,7 +39,7 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
   * Each window is on or off with its own warmth; a few flicker (TVs, tired bulbs).
   * Shops have big windows onto lit shelves and glowing signs (generic words, no brands);
     block entrances have a steel door and a lamp.
-  * Landmarks (the Opera) are floodlit. Emissive, with glow/bloom.
+  * Landmarks (the Opera, Teatr-Teatr, the House of Soviets) are floodlit. Emissive, with glow/bloom.
 * **The Opera and Ballet Theatre** has its own model (~17k triangles, one draw call):
   * **Massing** comes from the three OSM `building:part`s mapped for it: an 18 m main body
     with a hipped roof, the 23 m auditorium whose gabled end forms the pediment of the
@@ -49,6 +50,21 @@ Mobile renderer, Android first, with a keyboard/mouse desktop mode.
     relief of the State Emblem of the USSR.
   * **Other facades:** window openings with reveals, surrounds, sills and sandriks, giant
     pilasters, cornices and snowy roofs. Everything is floodlit at night.
+* **Teatr-Teatr** (Perm Academic Theatre, Lenina 53, opened in the early 1980s) has its own model too, fitted
+  to the OSM footprint and facing the Esplanade:
+  * a white marble volume whose front is an arcade of square pillars under a deep attic,
+    with the two-level glazed foyer behind;
+  * a granite porch with broad steps and marble parapets carrying six copper lanterns;
+  * the tall fly tower, a lower service wing with rows of windows, and the fountain
+    on the square in front.
+* **The House of Soviets** (Lenina 51, 1973; the Perm Krai government and Legislative
+  Assembly) closes the Esplanade from the east as a ten-storey "horizontal skyscraper":
+  * ribbon windows over grey spandrels, thin lines of light marble and slender fins;
+  * the long recessed loggia at the 7th floor and the chased emblem of the RSFSR on a
+    marble panel;
+  * a glazed ground floor behind pillars, stepped granite terraces with wide stairs, a
+    fountain on the square, and the flag of Russia on the roof.
+* The squares in front of these models are kept free of generated trees and lamps.
 * **Spruces**: procedural Norway spruces with whorls of drooping branches that turn
   up at the tips, needle texture, hanging twig fringes and clumps of snow. Near the
   player they use a detailed mesh (~4.5k triangles, two shapes); further away a
@@ -78,7 +94,8 @@ perm-winter-walk/
     scripts/atmosphere.gd    sky, ambient, moon, fog, glow
     scripts/city/            chunk_streamer.gd, chunk_loader.gd, building_builder.gd,
                              spruce_builder.gd, tree_lod.gd, props.gd, lamp_light_pool.gd
-    scripts/city/landmarks/  opera_builder.gd (the Opera Theatre model), mesh_kit.gd
+    scripts/city/landmarks/  opera_builder.gd, teatr_builder.gd, soviets_builder.gd (landmark
+                             models), mesh_kit.gd (modelling helpers)
     scripts/fx/              snowfall.gd, footsteps.gd, ambience.gd
     scripts/debug_runner.gd  command-line tests and screenshots
     shaders/                 facade, landmark, spruce, spruce_fringe, snow_surface, road_decal, light_cone,

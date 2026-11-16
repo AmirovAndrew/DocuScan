@@ -910,7 +910,8 @@ def build_chunk(world: World, cx: int, cz: int, size: float, stats: dict, keep_c
 
     # ---- trees: OSM natural=tree nodes plus Poisson-scattered trees in parks and woods
     trees = [(f.geom.x, f.geom.y, float(rng.uniform(0.85, 1.25)), float(rng.random() < 0.3))
-             for f in world.query("tree", rect) if rect.contains(f.geom)]
+             for f in world.query("tree", rect) if rect.contains(f.geom)
+             and (keep_clear is None or not keep_clear.contains(f.geom))]
     keep_out = unary_union([roads_u.buffer(1.5), paths_u.buffer(1.0), squares_u, paved_u,
                             bld_u.buffer(1.5)] + [Point(l[0], l[1]).buffer(2.0) for l in lamps]
                            + ([keep_clear] if keep_clear is not None else []))
@@ -929,12 +930,52 @@ def build_chunk(world: World, cx: int, cz: int, size: float, stats: dict, keep_c
     return w, lamps, light_buildings
 
 
-def landmark_model(world: World, feat: Feat, model: str) -> dict:
+# Buildings drawn by their own 3D model in the game (scripts/city/landmarks/*_builder.gd):
+# (model name, how to recognise the OSM building by name, where its main facade is).
+# "portico": the facade is where the footprint has a portico; "esplanade": the facade
+# faces the Esplanade (the spawn point), on whichever side of the building that is.
+LANDMARK_MODELS = [
+    ("opera", ("театр оперы", "opera"), "portico"),
+    ("teatr", ("театр-театр", "драматический театр"), "esplanade"),
+    ("soviets", ("дом советов", "законодательное собрание", "администрация пермского края"), "esplanade"),
+]
+
+
+def pick_landmark_buildings(feats: list[Feat], esplanade: Feat | None) -> dict[str, Feat]:
+    """The OSM building for each landmark model: by name; if several match, the tallest,
+    then the one nearest the Esplanade (the House of Soviets closes it from the east)."""
+    out = {}
+    for model, names, _ in LANDMARK_MODELS:
+        cands = [f for f in feats if f.kind == "building" and any(n in f.tags.get("name", "").lower() for n in names)]
+        if not cands:
+            continue
+
+        def score(f):
+            lv = parse_number(f.tags.get("building:levels")) or 0
+            d = f.geom.distance(esplanade.geom) if esplanade is not None else 0.0
+            return (-lv, d)
+        out[model] = min(cands, key=score)
+    return out
+
+
+# Depth (m) of the paved square with stairs and a fountain that a model draws in front of
+# its main facade; kept free of generated trees and lamps.
+FORECOURT_DEPTH = {"teatr": 42.0, "soviets": 44.0}
+
+
+def forecourt_polygon(frame: dict, depth: float) -> Polygon:
+    """Rectangle in front of a landmark model's facade (frame from landmark_model)."""
+    o, u, v = np.array(frame["origin"]), np.array(frame["u"]), np.array(frame["v"])
+    hw = frame["width"] / 2 + 2.0
+    return Polygon([tuple(o + u * x + v * z) for x, z in ((-hw, 0.0), (hw, 0.0), (hw, -depth), (-hw, -depth))])
+
+
+def landmark_model(world: World, feat: Feat, model: str, facing: str = "portico") -> dict:
     """Local frame, footprint and OSM building:parts of a landmark with its own 3D model.
 
-    Frame: u across the building, v from the main facade (v = 0) to the back; the main
-    facade is the side through which a building part sticks out (a portico), else the
-    side facing the spawn. Godot: model basis = (u, up, v), origin = facade centre."""
+    Frame: u across the building, v from the main facade (v = 0) to the back. The main
+    facade is found as `facing` says (see LANDMARK_MODELS). Godot: model basis =
+    (u, up, v), origin = middle of the facade line."""
     fp = max(polygons_of(feat.geom), key=lambda g: g.area)
     fp = orient(Polygon(fp.exterior).simplify(0.25, preserve_topology=True), sign=1.0)
     rect = fp.minimum_rotated_rectangle
@@ -949,7 +990,9 @@ def landmark_model(world: World, feat: Feat, model: str) -> dict:
     # 3) else the side facing the spawn point.
     front_hint = None
     notches = rect.difference(fp)
-    if notches.area > 0.015 * rect.area:
+    if facing == "esplanade" and "spawn_xz" in world.__dict__:
+        front_hint = np.asarray(world.spawn_xz)
+    if front_hint is None and notches.area > 0.015 * rect.area:
         front_hint = np.asarray(notches.centroid.coords[0])
     if front_hint is None and parts:
         outside = unary_union([p.geom for p in parts]).difference(fp.buffer(0.3))
@@ -987,7 +1030,10 @@ def landmark_model(world: World, feat: Feat, model: str) -> dict:
                 "osm_id": p.osm_id,
             })
     print(f"landmark model '{model}': {width:.1f} x {length:.1f} m, {len(out_parts)} OSM building parts")
-    return {"model": model, "frame": {"origin": [round(float(origin[0]), 3), round(float(origin[1]), 3)],
+    return {"model": model,
+            "levels": parse_number(feat.tags.get("building:levels")),
+            "height": parse_number(feat.tags.get("height")),
+            "frame": {"origin": [round(float(origin[0]), 3), round(float(origin[1]), 3)],
                                       "u": [round(float(u[0]), 6), round(float(u[1]), 6)],
                                       "v": [round(float(v[0]), 6), round(float(v[1]), 6)],
                                       "width": round(width, 2), "length": round(length, 2)},
@@ -1136,15 +1182,24 @@ def main(argv=None) -> int:
         spawn, landmarks = old["spawn"], old.get("landmarks", [])
     else:
         spawn, landmarks = find_spawn(world, named)
-    if "opera" in named:
-        world.custom_models.add(named["opera"].osm_id)
-        world.spawn_xz = (spawn["x"], spawn["z"])
-        model = landmark_model(world, named["opera"], "opera")
-        for lm in landmarks:
-            if lm.get("osm_id") == named["opera"].osm_id:
-                lm.update(model)
-    # Keep the first view open: no trees or generated lamps right at the spawn point.
-    spawn_clear = Point(spawn["x"], spawn["z"]).buffer(9.0)
+    world.spawn_xz = (spawn["x"], spawn["z"])
+    facing_of = {m: facing for m, _, facing in LANDMARK_MODELS}
+    forecourts = []
+    for model, feat in pick_landmark_buildings(feats, named.get("esplanade")).items():
+        world.custom_models.add(feat.osm_id)
+        data = landmark_model(world, feat, model, facing_of[model])
+        entry = next((lm for lm in landmarks if lm.get("osm_id") == feat.osm_id), None)
+        if entry is None:
+            c = max(polygons_of(feat.geom), key=lambda g: g.area).centroid
+            entry = {"name": feat.tags.get("name", model), "x": round(c.x, 2), "z": round(c.y, 2),
+                     "osm_id": feat.osm_id}
+            landmarks.append(entry)
+        entry.update(data)
+        if model in FORECOURT_DEPTH:
+            forecourts.append(forecourt_polygon(data["frame"], FORECOURT_DEPTH[model]))
+    # Keep the first view open: no trees or generated lamps right at the spawn point,
+    # nor on the paved squares (stairs, fountain) the landmark models put in front of them.
+    spawn_clear = unary_union([Point(spawn["x"], spawn["z"]).buffer(9.0)] + forecourts)
     chunk_index = dict(old["chunks"]) if old else {}
     total_bytes = 0
     built = {cid: build_chunk(world, cid[0], cid[1], size, stats, spawn_clear) for cid in chunk_ids}
